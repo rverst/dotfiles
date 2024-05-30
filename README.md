@@ -1,6 +1,6 @@
 # dotfiles
 
-My personal dotfiles
+My personal dotfiles, managed with [stow](https://www.gnu.org/software/stow/).
 
 ## Installation
 
