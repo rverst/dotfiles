@@ -1,0 +1,17 @@
+[core]
+	editor = nvim
+[include]
+	path = ~/.gitconfig.local
+[diff]
+	tool = nvim
+[difftool]
+	prompt = true
+[difftool "nvim"]
+	cmd = "nvim -d \"$LOCAL\" \"$REMOTE\""
+[merge]
+	tool = nvim
+[mergetool]
+	keepBackup = false
+	prompt = false
+[mergetool "nvim"]
+	cmd = nvim -d -c \"wincmd l\" -c \"norm ]c\" \"$LOCAL\" \"$MERGED\" \"$REMOTE\"

@@ -1,0 +1,64 @@
+#!/usr/bin/env sh
+#
+# bootstrap.sh
+# This script bootstraps the setup of a new machine. It checks
+# if the necessary dependencies are installed and installs them
+# if needed. After that, it runs the dotfiles script with --install.
+#
+set -o errexit
+set -o nounset
+#set -o xtrace
+
+# set `magic` variable to the directory of the script
+__dir="$(cd "$(dirname "$0")" && pwd)"
+__file="${__dir}/$(basename "$0")"
+__base="$(basename ${__file})"
+__root="$(cd "$(dirname "${__dir}")" && pwd)"
+
+install_zsh() {
+	dist=$(uname -s)
+	local uid=$(id -u)
+
+	if [ "$dist" = "Linux" ]; then
+		if [ -f /etc/os-release ]; then
+			local v=$(cat /etc/os-release | grep -i -e "^id=" | sed -r "s/^id=(.+)/\1/i")
+			if [ "$v" = "debian" ] || [ "$v" = "ubuntu" ]; then
+				cmd="apt-get -y install zsh"
+				[ $uid -gt 0 ] && cmd="sudo $cmd"
+				$cmd
+			elif [ "$v" = "arch" ]; then
+				cmd="pacman -S zsh"
+				[ $uid -gt 0 ] && cmd="sudo $cmd"
+				cmd
+			else
+				echo "linux variant not supported: $v" && exit 1
+			fi
+		else
+			echo "not supported" && exit 1
+		fi
+	fi
+
+	echo ""
+	zsh=$(command -v zsh)
+	echo "Setting 'zsh' as login shell, enter your"
+	echo "password when prompted"
+	if [ $uid -eq 0 ]; then
+		chsh -s "$zsh" $SUDO_USER || exit 1
+	else
+		chsh -s "$zsh" || exit 1
+	fi
+	echo ""
+	echo "You need to logout and login again or reboot and call this script again:"
+	echo "$__file"
+	exit 0
+}
+
+echo ""
+if [ "$(expr "$SHELL" : '.*/\(.*\)')" = "zsh" ]; then
+	zsh "$__dir/dotfiles install"
+else
+	echo "'zsh' is not your default shell, these dotfiles are build on zsh."
+	read -p "Install 'zsh' and call \`chsh /usr/bin/zsh\` now [Y/n]" a
+	[ "$a" = "" ] && a=y
+	[ "$a" = "y" ] || [ "$a" = "Y" ] && install_zsh || exit 0
+fi

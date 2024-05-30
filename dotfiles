@@ -1,0 +1,145 @@
+#!/usr/bin/env zsh
+#
+# dotfiles
+#
+set -o errexit
+set -o nounset
+
+__dir="$(cd "$(dirname "$0")" && pwd)"
+__file="${__dir}/$(basename "$0")"
+__base="$(basename ${__file})"
+__root="$(cd "$(dirname "${__dir}")" && pwd)"
+
+DOT_DRY=
+DOT_SIL=
+DOT_UNA=
+
+DOTFILES_BRANCH=main
+DOTFILES_DIR=${__dir}
+PACKAGES=$(find ${DOTFILES_DIR} -type d \( -name "apps" \) -prune -o -type d ! -name ".*" ! -name "." -print -maxdepth 1)
+
+usage() {
+	echo "Dotfiles installer"
+	echo ""
+	echo "Usage:"
+	echo ""
+	echo "	dotfiles [options] <command> "
+	echo ""
+	echo "The commands are:"
+	echo ""
+	echo "	install		install the dotfiles"
+	echo "	reinstall	reinstall the dotfiles (unlink->link)"
+	echo "	uninstall	uninstall the dotfiles (unlink)"
+	echo "	update		update the dotfiles (check remote repository)"
+	echo "	help		show this info"
+	echo ""
+	echo "Possible options are:"
+	echo ""
+	echo "	-n		dry run"
+	echo "	-s		silent"
+	echo "	-u		unattended"
+	echo ""
+}
+
+function cleanup() {
+	info "Cleanup"
+	exit 0
+}
+
+function stow_packages() {
+	local flags=""
+	if [ -n "${DOT_DRY}" ]; then
+		flags="${flags}-nv"
+	fi
+	while read -r pkg_dir; do
+		local pkg=$(basename ${pkg_dir})
+		info "  package: ${pkg}"
+		stow ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
+	done <<<${PACKAGES}
+	success "Done\n"
+}
+
+function do_install() {
+	info "Installing dotfiles"
+	stow_packages -S
+
+	[ -z $DOT_UNA ] && setup_gitconfig
+	setup_localrc
+}
+
+function do_reinstall() {
+	info "Reinstalling dotfiles"
+	stow_packages -R
+}
+
+function do_uninstall() {
+	info "Uninstalling dotfiles"
+	stow_packages -D
+}
+
+function do_update() {
+	info "Updating dotfiles"
+	if ! git -C ${DOTFILES_DIR} diff --exit-code >/dev/null; then
+		warn "Dotfiles repository is dirty. Commit or stash your changes first."
+		exit 1
+	fi
+	stow_packages -D
+	git -C ${DOTFILES_DIR} pull origin ${DOTFILES_BRANCH}
+	stow_packages -S
+}
+
+function main() {
+	source "$__dir/.scripts/print.sh"
+	source "$__dir/.scripts/utils.sh"
+
+	OPTIND=1
+	OPTERR=0
+	while getopts "hnsu:" opt; do
+		case "$opt" in
+		h)
+			show_help
+			exit 0
+			;;
+		n)
+			DOT_DRY=1
+			;;
+		s)
+			DOT_SIL=1
+			;;
+		u)
+			DOT_UNA=1
+			;;
+		*)
+			usage
+			exit 1
+			;;
+
+		esac
+	done
+	shift $((OPTIND - 1))
+	[ "${1:-}" = "--" ] && shift
+
+	case "$@" in
+	install)
+		do_install
+		;;
+	reinstall)
+		do_reinstall
+		;;
+	uninstall)
+		do_uninstall
+		;;
+	update)
+		do_update
+		;;
+	*)
+		usage
+		exit 1
+		;;
+
+	esac
+
+	cleanup
+}
+
+main $@
