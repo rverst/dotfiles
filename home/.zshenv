@@ -9,7 +9,9 @@ export EDITOR=nvim
 export VISUAL=nvim
 
 export PATH=/opt/homebrew/bin:${PATH}
-export PATH=$HOME/go/bin:${PATH}
+export PATH=${XDG_LOCAL_BIN}:${PATH}
+export PATH=${HOME}/.local/scripts:${PATH}
+export PATH=${HOME}/go/bin:${PATH}
 
 setNode() {
 	local version=$1
@@ -25,7 +27,7 @@ setJava() {
 	if [ -z $2 ]; then java --version; fi
 }
 
-if ! command -v node &> /dev/null; then
+if ! command -v node &>/dev/null; then
 	setNode 20 1
 fi
 
@@ -36,10 +38,9 @@ fi
 alias java-21="setJava 21"
 alias java-11="setJava 11"
 
-alias node-20="setNode 18"
+alias node-20="setNode 20"
 alias node-18="setNode 18"
 
 export HOMEBREW_NO_ENV_HINTS=1
 
 [[ -f .zshenv.local ]] && source .zshenv.local
-

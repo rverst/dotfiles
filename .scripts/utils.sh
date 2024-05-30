@@ -40,7 +40,6 @@ setup_gitconfig() {
 }
 
 setup_localrc() {
-
 	info "Setting up ~/.localrc"
 	if [ ! -f "$HOME/.localrc" ]; then
 		local localrc="$HOME/.localrc"
