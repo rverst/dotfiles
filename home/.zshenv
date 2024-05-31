@@ -1,7 +1,7 @@
 export XDG_CONFIG_HOME=$HOME/.config
 export XDG_CACHE_HOME=$HOME/.cache
 export XDG_DATA_HOME=$HOME/.local/share
-export XDF_LOCAL_BIN=$HOME/.local/bin
+export XDG_LOCAL_BIN=$HOME/.local/bin
 export XDG_CODE_HOME=$HOME/Dev
 
 export ZDOTDIR=$XDG_CONFIG_HOME/zsh
