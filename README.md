@@ -6,7 +6,7 @@ My personal dotfiles, managed with [stow](https://www.gnu.org/software/stow/).
 
 1. Clone the repository
 ```bash
-> git clone https://github.com/rverst/dotfiles.git ~/.dotfiles
+> git clone --recursive https://github.com/rverst/dotfiles.git ~/.dotfiles
 ```
 
 2. Install the dotfiles
