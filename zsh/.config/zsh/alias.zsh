@@ -1,10 +1,10 @@
 #!/usr/bin/env zsh
 
 if [ "$(uname -s)" = "Darwin" ]; then
-  alias ls="ls -hFG"
+	alias ls="ls -hFG"
 else
-  #alias ls="ls -F --color"
-  alias ls="ls -hN --color=auto --group-directories-first"
+	#alias ls="ls -F --color"
+	alias ls="ls -hN --color=auto --group-directories-first"
 fi
 
 # Some basics
@@ -22,54 +22,74 @@ alias ldock="lazydocker"
 
 # Quick access to #EDITOR
 alias \
-  e="$EDITOR" \
-  ve="$VEDITOR" \
-  se="sudo $EDITOR" \
+	e="$EDITOR" \
+	ve="$VEDITOR" \
+	se="sudo $EDITOR"
 
 # Verbosity and settings that you pretty much just always are going to want.
 alias \
-  cp="cp -iv" \
-  mv="mv -iv" \
-  mkd="mkdir -pv"
+	cp="cp -iv" \
+	mv="mv -iv" \
+	mkd="mkdir -pv"
 
 if [ "$(uname -s)" = "Linux" ]; then
-  alias rm="rm -vI"
+	alias rm="rm -vI"
 elif [ "$(uname -s)" = "Darwin" ]; then
-  alias rm="rm -v"
-  alias netlis="netstat -p tcp -van | grep LISTEN"
+	alias rm="rm -v"
+	alias netlis="netstat -p tcp -van | grep LISTEN"
 fi
 
 # More colors
 alias \
-  grep="grep --color=auto" \
-  diff="diff --color=auto" \
-  ccat="highlight --out-format=ansi"
+	grep="grep --color=auto" \
+	diff="diff --color=auto" \
+	ccat="highlight --out-format=ansi"
 
 # quick hack to make watch work with aliases
 alias watch='watch -c -d -t '
 
 if [ "$(uname -s)" = "Linux" ]; then
-  # open, pbcopy and pbpaste on linux
-  if [ -z "$(command -v pbcopy)" ]; then
-    if [ -n "$(command -v xclip)" ]; then
-      alias pbcopy="xclip -selection clipboard"
-      alias pbpaste="xclip -selection clipboard -o"
-    elif [ -n "$(command -v xsel)" ]; then
-      alias pbcopy="xsel --clipboard --input"
-      alias pbpaste="xsel --clipboard --output"
-    fi
-  fi
-  if [ -e /usr/bin/xdg-open ]; then
-    alias open="xdg-open"
-  fi
+	# open, pbcopy and pbpaste on linux
+	if [ -z "$(command -v pbcopy)" ]; then
+		if [ -n "$(command -v xclip)" ]; then
+			alias pbcopy="xclip -selection clipboard"
+			alias pbpaste="xclip -selection clipboard -o"
+		elif [ -n "$(command -v xsel)" ]; then
+			alias pbcopy="xsel --clipboard --input"
+			alias pbpaste="xsel --clipboard --output"
+		fi
+	fi
+	if [ -e /usr/bin/xdg-open ]; then
+		alias open="xdg-open"
+	fi
 
-    # todo: differ between debian/ubuntu and arch
-    alias \
-      install="sudo apt install" \
-      update="sudo apt update" \
-      upgrade="sudo apt upgrade" \
-      autremove="sudo apt autoremove" \
+	# todo: differ between debian/ubuntu and arch
+	alias \
+		install="sudo apt install" \
+		update="sudo apt update" \
+		upgrade="sudo apt upgrade" \
+		autremove="sudo apt autoremove"
 
-      alias \
-      sys="sudo systemctl"
+	alias \
+		sys="sudo systemctl"
 fi
+
+setNode() {
+	local version=$1
+	export PATH="/opt/homebrew/opt/node@${version}/bin:$PATH"
+
+	if [ -z $2 ]; then node --version; fi
+}
+
+setJava() {
+	local version=$1
+	export JAVA_HOME=$(/usr/libexec/java_home -v $version)
+
+	if [ -z $2 ]; then java --version; fi
+}
+
+alias java-21="setJava 21"
+alias java-11="setJava 11"
+
+alias node-20="setNode 20"
+alias node-18="setNode 18"

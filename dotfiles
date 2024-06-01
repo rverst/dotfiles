@@ -83,6 +83,8 @@ function do_update() {
 		warn "Dotfiles repository is dirty. Commit or stash your changes first."
 		exit 1
 	fi
+	# TODO: check if local is up to date with remote -> no update needed
+
 	stow_packages -D
 	git -C ${DOTFILES_DIR} pull origin ${DOTFILES_BRANCH}
 	stow_packages -S
