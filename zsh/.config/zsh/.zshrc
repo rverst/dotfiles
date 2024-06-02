@@ -5,9 +5,6 @@
 typeset -U path
 path=(~/.local/bin ~/.local/scripts ~/go/bin /opt/homebrew/bin $path)
 
-echo $path
-echo $PATH
-
 export HOMEBREW_NO_ENV_HINTS=1
 export GPG_TTY=$(tty)
 export LSCOLORS='exfxcxdxbxegedabagacad'
