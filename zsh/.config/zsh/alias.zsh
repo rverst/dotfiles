@@ -3,11 +3,12 @@
 if [ "$(uname -s)" = "Darwin" ]; then
 	alias ls="ls -hFG"
 else
-	#alias ls="ls -F --color"
+	# alias ls="ls -F --color"
 	alias ls="ls -hN --color=auto --group-directories-first"
 fi
 
-# Some basics
+# some basics
+alias c='clear'
 alias ..="cd .."
 alias cd..="cd .."
 alias l="ls -l"
@@ -20,17 +21,18 @@ alias dev="cd $XDG_CODE_HOME"
 alias lg="lazygit"
 alias ldock="lazydocker"
 
-# Quick access to #EDITOR
-alias \
-	e="$EDITOR" \
-	ve="$VEDITOR" \
-	se="sudo $EDITOR"
+# quick access to #EDITOR
+alias e="$EDITOR"
+alias ve="$VEDITOR"
+alias se="sudo $EDITOR"
 
-# Verbosity and settings that you pretty much just always are going to want.
-alias \
-	cp="cp -iv" \
-	mv="mv -iv" \
-	mkd="mkdir -pv"
+alias vim='nvim'
+alias vi='nvim'
+
+# verbosity and settings that you pretty much just always are going to want.
+alias cp="cp -iv"
+alias mv="mv -iv"
+alias mkd="mkdir -pv"
 
 if [ "$(uname -s)" = "Linux" ]; then
 	alias rm="rm -vI"
@@ -39,11 +41,10 @@ elif [ "$(uname -s)" = "Darwin" ]; then
 	alias netlis="netstat -p tcp -van | grep LISTEN"
 fi
 
-# More colors
-alias \
-	grep="grep --color=auto" \
-	diff="diff --color=auto" \
-	ccat="highlight --out-format=ansi"
+# more colors
+alias grep="grep --color=auto"
+alias diff="diff --color=auto"
+alias ccat="highlight --out-format=ansi"
 
 # quick hack to make watch work with aliases
 alias watch='watch -c -d -t '
@@ -63,23 +64,22 @@ if [ "$(uname -s)" = "Linux" ]; then
 		alias open="xdg-open"
 	fi
 
-	# todo: differ between debian/ubuntu and arch
-	alias \
-		install="sudo apt install" \
-		update="sudo apt update" \
-		upgrade="sudo apt upgrade" \
-		autremove="sudo apt autoremove"
-
 	alias \
 		sys="sudo systemctl"
 fi
 
-setNode() {
-	local version=$1
-	export PATH="/opt/homebrew/opt/node@${version}/bin:$PATH"
+if [ "$(uname -s)" = "Darwin" ]; then
+	setNode() {
+		local version=$1
+		export PATH="/opt/homebrew/opt/node@${version}/bin:$PATH"
 
-	if [ -z $2 ]; then node --version; fi
-}
+		if [ -z $2 ]; then node --version; fi
+	}
+
+	[ -L "/opt/homebrew/opt/node@20" ] && alias node-20="setNode 20"
+	[ -L "/opt/homebrew/opt/node@18" ] && alias node-18="setNode 18"
+	[ -L "/opt/homebrew/opt/node@16" ] && alias node-16="setNode 16"
+fi
 
 setJava() {
 	local version=$1
@@ -90,6 +90,3 @@ setJava() {
 
 alias java-21="setJava 21"
 alias java-11="setJava 11"
-
-alias node-20="setNode 20"
-alias node-18="setNode 18"

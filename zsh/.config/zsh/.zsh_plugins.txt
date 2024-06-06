@@ -1,8 +1,0 @@
-mafredri/zsh-async
-zsh-users/zsh-completions
-zsh-users/zsh-autosuggestions
-
-# these should be loaded last
-# sindresorhus/pure # give starship a chance
-zdharma/fast-syntax-highlighting
-zsh-users/zsh-history-substring-search

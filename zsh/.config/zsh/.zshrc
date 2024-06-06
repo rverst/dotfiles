@@ -1,139 +1,107 @@
 #!/bin/zsh
-# uncomment this and the last line for zprof info
-# zmodload zsh/zprof
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.config/zsh/.zshrc.
+# Initialization code that may require console input (password prompts, [y/n]
+# confirmations, etc.) must go above this block; everything else may go below.
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
 
+# environment variables
 typeset -U path
-path=(~/.local/bin ~/.local/scripts ~/go/bin /opt/homebrew/bin $path)
+path=(~/.local/bin ~/.local/scripts $path)
+
+[ -d ~/go/bin ] && path=(~/go/bin $path)
+
+# on macos, .zprofile is used by some apps, like homebrew ot jetbrains toolbox to set env vars
+[ -f "$HOME/.zprofile" ] && . "$HOME/.zprofile"
 
 export HOMEBREW_NO_ENV_HINTS=1
 export GPG_TTY=$(tty)
-export LSCOLORS='exfxcxdxbxegedabagacad'
-export CLICOLOR=true
 export KEYTIMEOUT=10
 
-zsh_plugins=${ZDOTDIR}/.zsh_plugins
-if [[ ! ${zsh_plugins}.zsh -nt ${zsh_plugins}.txt ]]; then
-	echo "INSTALL PLUGINS"
-	source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
-	antidote bundle <${zsh_plugins}.txt >${zsh_plugins}.zsh
+# plugin manager
+ZINIT_HOME="${ZDG_DATA_HOME:-${HOME}/.local/share}/zinit/zinit.git"
+if [ ! -d "$ZINIT_HOME" ]; then
+	mkdir -p "$(dirname $ZINIT_HOME)"
+	git clone https://github.com/zdharma-continuum/zinit.git "$ZINIT_HOME"
 fi
-source ${zsh_plugins}.zsh
 
-#fpath=($ZDOTDIR/functions $fpath)
-#autoload -U "$ZDOTDIT"/functions/*(:t)
+source "$ZINIT_HOME/zinit.zsh"
 
-autoload -U up-line-or-beginning-search
-autoload -U down-line-or-beginning-search
-autoload -U edit-command-line
+# powerlevel10k
+zinit ice depth=1 && zinit light romkatv/powerlevel10k
 
-HISTFILE="$XDG_CACHE_HOME/.zsh_history"
-HISTSIZE=20000
-SAVEHIST=20000
+# some other plugins
+zinit light zsh-users/zsh-syntax-highlighting
+zinit light zsh-users/zsh-completions
+zinit light zsh-users/zsh-autosuggestions
+zinit light Aloxaf/fzf-tab
 
-# don't nice background tasks
-setopt NO_BG_NICE
-setopt NO_HUP
-setopt NO_BEEP
-# allow functions to have local options
-setopt LOCAL_OPTIONS
-# allow functions to have local traps
-setopt LOCAL_TRAPS
-# share history between sessions ???
-setopt SHARE_HISTORY
-# add timestamps to history
-setopt EXTENDED_HISTORY
-setopt PROMPT_SUBST
-setopt CORRECT
-setopt COMPLETE_IN_WORD
-# adds history
-setopt APPEND_HISTORY
-# adds history incrementally and share it across sessions
-setopt INC_APPEND_HISTORY
-setopt SHARE_HISTORY
-# don't record dupes in history
-setopt HIST_IGNORE_ALL_DUPS
-setopt HIST_REDUCE_BLANKS
-setopt HIST_IGNORE_DUPS
-setopt HIST_IGNORE_SPACE
-setopt HIST_VERIFY
-setopt HIST_EXPIRE_DUPS_FIRST
-# dont ask for confirmation in rm globs*
-# setopt RM_STAR_SILENT
+zinit snippet OMZP::git
+zinit snippet OMZP::aws
+zinit snippet OMZP::azure
+zinit snippet OMZP::command-not-found
+zinit snippet OMZP::kubectl
+zinit snippet OMZP::kubectx
+zinit snippet OMZP::ssh
 
-zle -N up-line-or-beginning-search
-zle -N down-line-or-beginning-search
-zle -N edit-command-line
+# load completions
+autoload -U compinit && compinit
 
-# fuzzy find: start to type
-bindkey "$terminfo[kcuu1]" up-line-or-beginning-search
-bindkey "$terminfo[kcud1]" down-line-or-beginning-search
-bindkey "$terminfo[cuu1]" up-line-or-beginning-search
-bindkey "$terminfo[cud1]" down-line-or-beginning-search
+zinit cdreplay -q
 
-# delete char with backspaces and delete
+# to customize prompt, run `p10k configure` or edit ~/.config/zsh/.p10k.zsh.
+[[ ! -f ~/.config/zsh/.p10k.zsh ]] || source ~/.config/zsh/.p10k.zsh
+
+
+# keybindings
+bindkey '^a' autosuggest-accept
+bindkey '^p' history-search-backward
+bindkey '^n' history-search-forward
+
 bindkey '^[[3~' delete-char
 bindkey '^?' backward-delete-char
 
-bindkey '^f' 'tmux-sessionizer\n'
+# options
 
-autoload -Uz compinit
-compinit
+#history
+HISTSIZE=9001
+HISTFILE="$ZDOTDIR/.zsh_history"
+SAVEHIST=$HISTSIZE
+HISTDUP=erase
+setopt appendhistory
+setopt sharehistory
+setopt hist_ignore_space
+setopt hist_ignore_all_dups
+setopt hist_save_no_dups
+setopt hist_ignore_dups
 
-# forces zsh to realize new commands
-zstyle ':completion:*' completer _oldlist _expand _complete _match _ignored _approximate
-# matches case insensitive for lowercase
-zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
-# pasting with tabs doesn't perform completion
-zstyle ':completion:*' insert-tab pending
-# rehash if command not found (possibly recently installed)
-zstyle ':completion:*' rehash true
-# menu if nb items > 2
-zstyle ':completion:*' menu select=2
+# completion styling (case insensitive completion and colors)
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+# disable default completion in favour of fzf
+zstyle ':completion:*' menu no
+zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color $realpath'
+zstyle ':fzf-tab:complete:cd:__zoxide_z:*' fzf-preview 'ls --color $realpath'
 
-# search history with fzf if installed, default otherwise
-if [ -L /opt/homebrew/bin/fzf ]; then
-	local target=$(readlink -f /opt/homebrew/bin/fzf)
-	. ${target%bin*}shell/key-bindings.zsh
-	. ${target%bin*}shell/completion.zsh
-elif test -d /usr/local/opt/fzf/shell; then
-	# shellcheck disable=SC1091
-	. /usr/local/opt/fzf/shell/key-bindings.zsh
-else
-	bindkey '^R' history-incremental-search-backward
-fi
-
+# aliases
 source "$ZDOTDIR/alias.zsh"
 
-export LS_COLORS="rs=0:di=34:ln=35:mh=00:pi=40;33:so=01;35:\
-do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:\
-su=37;41:sg=30;43:ca=30;41:tw=35;01:ow=33;01:st=37;44:ex=01;32:\
-*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:\
-*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:\
-*.t7z=01;31:*.zip=01;31:*.z=01;31:*.Z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:\
-*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:\
-*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:\
-*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:\
-*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:\
-*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:\
-*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:\
-*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:\
-*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:\
-*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:\
-*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:\
-*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:\
-*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:\
-*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:\
-*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:\
-*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:\
-*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:"
+# fzf shell integration
+if [ ! -z $(command -v fzf) ]; then
+  eval "$(fzf --zsh)"
+else
+  bindkey '^r' history-incremental-search-backward
+fi
+
+# zoxide integration
+if [ ! -z $(command -v zoxide) ]; then
+  eval "$(zoxide init --cmd cd zsh)"
+fi
 
 # use .localrc for SUPER SECRET CRAP that you don't want in your public, versioned repo.
 # shellcheck disable=SC1090
 [ -f "$HOME/.localrc" ] && . "$HOME/.localrc"
 
-# on macos, .zprofile is used by some apps, like homebrew ot jetbrains toolbox to set env vars
-[ -f "$HOME/.zprofile" ] && . "$HOME/.zprofile"
 
-eval "$(starship init zsh)"
-# . "$ZDOTDIR/prompt.zsh"
-# zprof
+
