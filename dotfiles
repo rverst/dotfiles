@@ -87,6 +87,7 @@ function do_update() {
 
 	stow_packages -D
 	git -C ${DOTFILES_DIR} pull origin ${DOTFILES_BRANCH}
+	git submodule update --recursive
 	stow_packages -S
 }
 
