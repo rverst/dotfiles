@@ -11,7 +11,10 @@ path=(~/.local/bin ~/.local/scripts $path)
 
 export HOMEBREW_NO_ENV_HINTS=1
 export GPG_TTY=$(tty)
-export KEYTIMEOUT=10
+
+#vi mode
+bindkey -v
+export KEYTIMEOUT=1
 
 # plugin manager
 ZINIT_HOME="${ZDG_DATA_HOME:-${HOME}/.local/share}/zinit/zinit.git"
@@ -52,6 +55,26 @@ bindkey '^n' history-search-forward
 
 bindkey '^[[3~' delete-char
 bindkey '^?' backward-delete-char
+
+# change cursor shape for different vi modes
+function zle-keymap-select {
+  if [[ ${KEYMAP} == vicmd ]] || [[ $1 = 'block' ]]; then
+        echo -ne '\e[1 q'
+  elif [[ ${KEYMAP} == main ]] || [[ ${KEYMAP} == viins ]] ||
+       [[ ${KEYMAP} == '' ]] || [[ $1 == 'beam' ]]; then
+        echo -ne '\e[5 q'
+  fi
+}
+zle -N zle-keymap-select
+
+function zle-line-init {
+  zle -K viins
+  echo -ne '\e[5 q'
+}
+zle -N zle-line-init
+
+echo -ne '\e[5 q'
+preexec() { echo -ne '\e[5 q' ;}
 
 # options
 
