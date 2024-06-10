@@ -20,13 +20,13 @@ history = 20000
 [window]
 dimensions = { columns = 190, lines = 68 }
 decorations = "Buttonless"
-opacity = 0.82
+opacity = 1
 blur = true
 padding = { x = 4, y = 2}
 dynamic_padding = true
 
 [colors.primary]
-background = '#202020'
+background = '#333333'
 foreground = '#c5c5c5'
 
 [colors.cursor]
