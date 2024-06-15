@@ -54,7 +54,7 @@ function stow_packages() {
 	while read -r pkg_dir; do
 		local pkg=$(basename ${pkg_dir})
 		info "  package: ${pkg}"
-		stow ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
+		stow --dotfiles ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
 	done <<<${PACKAGES}
 	success "Done\n"
 }
