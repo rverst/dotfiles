@@ -1,0 +1,9 @@
+#/usr/bin/env bash
+
+PARENT_PID=$(ps -o ppid= -p $$)
+PARENT_NAME=$(ps -p $PARENT_PID -o comm=)
+
+
+if [[ "$PARENT_NAME" == "lazygit" || "$PARENT_NAME" == "lazydocker" ]]; then
+    kill -SIGTERM $PARENT_PID
+fi
