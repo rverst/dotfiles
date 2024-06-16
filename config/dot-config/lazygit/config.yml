@@ -4,13 +4,13 @@ gui:
   showDivergenceFromBaseBranch: 'arrowAndNumber'
   spinner:
     frames:
-      - '⣽'
-      - '⣻'
-      - '⢿'
-      - '⡿'
-      - '⣟'
-      - '⣯'
       - '⣷'
+      - '⣯'
+      - '⣟'
+      - '⡿'
+      - '⢿'
+      - '⣻'
+      - '⣽'
       - '⣾'
 
 git:
@@ -44,8 +44,9 @@ customCommands:
         key: 'commitMessage'
         initialValue: ''
     command: 'git commit --no-gpg-sign -m {{.Form.commitMessage | quote}}'
-  - key: 'n'
+  - key: 'N'
     context: 'localBranches'
+    description: 'New branch with prefix'
     prompts:
       - type: 'menu'
         title: 'What kind of branch is it?'
@@ -60,9 +61,12 @@ customCommands:
           - name: 'release'
             description: 'a release branch'
             value: 'release'
+          - name: 'none'
+            description: 'don''t use any prefix'
+            value: '-'
       - type: 'input'
         title: 'What is the new branch name?'
         key: 'BranchName'
         initialValue: ''
-    command: "git flow {{.Form.BranchType}} start {{.Form.BranchName}}"
+    command: 'git checkout -b {{if eq .Form.BranchType "-"}}{{else}}{{.Form.BranchType}}/{{end}}{{.Form.BranchName}} refs/heads/{{.SelectedLocalBranch.Name}}'
     loadingText: 'Creating branch'
