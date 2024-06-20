@@ -11,6 +11,7 @@ path=(~/.local/bin ~/.local/scripts $path)
 
 export HOMEBREW_NO_ENV_HINTS=1
 export GPG_TTY=$(tty)
+export FZF_DEFAULT_OPTS='--bind ctrl-a:accept --height 40% --tmux 80%'
 
 #vi mode
 bindkey -v
@@ -96,6 +97,10 @@ zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
 # disable default completion in favour of fzf
 zstyle ':completion:*' menu no
 zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color $realpath'
+
+# functions
+fpath=(~/.config/zsh/functions $fpath)
+autoload -U bip bup
 
 # aliases
 source "$ZDOTDIR/alias.zsh"
