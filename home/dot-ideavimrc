@@ -1,0 +1,90 @@
+""" Map leader to space
+let mapleader=" "
+
+""" Vim plugins
+
+set surround
+
+" https://github.com/TheBlob42/idea-which-key
+set which-key
+set notimeout
+" set timeoutlen=5000
+
+let g:WhichKey_ShowVimActions = "true"
+let g:WhichKey_DefaultDelay = 500
+let g:WhichKey_FontSize = 14
+let g:WhichKey_PrefixColor = "orange"
+let g:WhichKey_PrefixStype = "italic"
+
+let g:WhichKeyDesc_yank_to_clipboard = "<leader>y yank to clipboard"
+let g:WhichKeyDesc_paste_from_clipboard = "<leader>p paste from clipboard"
+
+let g:WhichKeyDesc_quick_actions = "<leader>a quick actions"
+let g:WhichKeyDesc_goto_next_error = "<leader>e goto next error"
+let g:WhichKeyDesc_QuickFixes = "<leader>f quickfixes"
+let g:WhichKeyDesc_gnerate = "<leader>g generate"
+let g:WhichKeyDesc_rename_element = "<leader>r rename element"
+let g:WhichKeyDesc_surroundWith = "<leader>s surround with"
+let g:WhichKeyDesc_refactoringmenu = "<leader>R refactoring menu"
+let g:WhichKeyDesc_gotodeclaration = "<leader>b goto declaration"
+let g:WhichKeyDesc_commentbylinecomment = "<leader>c comment by line comment"
+let g:WhichKeyDesc_commentbyblockcomment = "<leader>C comment by block comment"
+
+""" Common settings
+set hlsearch
+set clipboard=unnamedplus
+set clipboard^=ideaput
+
+set number relativenumber
+set smartcase
+set incsearch
+set ruler
+set autoindent
+set showcmd
+set showmode
+
+
+""" Idea settings
+set ideajoin
+
+""" Mappings
+map <leader>a :action QuickActions<CR>
+map <leader>e :action GotoNextError<CR>
+map <leader>f :action QuickFixes<CR>
+map <leader>g :action Generate<CR>
+map <leader>r :action RenameElement<CR>
+map <leader>s :action SurroundWith<CR>
+map <leader>R :action RefactoringMenu<CR>
+map <leader>b :action GotoDeclaration<CR>
+map <leader>c :action CommentByLineComment<CR>
+map <leader>C :action CommentByBlockComment<CR>
+
+map W w<CR>
+
+map \r :action ReformatCode<CR>
+map \b :action ToggleLineBreakpoint<CR>
+
+map \BB :action ToggleBookmark<CR>
+map \B0 :action ToggleBookmark0<CR>
+map \B1 :action ToggleBookmark1<CR>
+map \B2 :action ToggleBookmark2<CR>
+map \B3 :action ToggleBookmark3<CR>
+map \B4 :action ToggleBookmark4<CR>
+map \B5 :action ToggleBookmark5<CR>
+map \B6 :action ToggleBookmark6<CR>
+map \B7 :action ToggleBookmark7<CR>
+map \B8 :action ToggleBookmark8<CR>
+map \B9 :action ToggleBookmark9<CR>
+
+map \Gn :action GotoNextBookmark<CR>
+map \GN :action GotoPreviousBookmark<CR>
+map \G0 :action GotoBookmark0<CR>
+map \G1 :action GotoBookmark1<CR>
+map \G2 :action GotoBookmark2<CR>
+map \G3 :action GotoBookmark3<CR>
+map \G4 :action GotoBookmark4<CR>
+map \G5 :action GotoBookmark5<CR>
+map \G6 :action GotoBookmark6<CR>
+map \G7 :action GotoBookmark7<CR>
+map \G8 :action GotoBookmark8<CR>
+map \G9 :action GotoBookmark9<CR>
