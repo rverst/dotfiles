@@ -3,32 +3,9 @@ let mapleader=" "
 
 """ Vim plugins
 
-set surround
-
 " https://github.com/TheBlob42/idea-which-key
-set which-key
 set notimeout
 " set timeoutlen=5000
-
-let g:WhichKey_ShowVimActions = "true"
-let g:WhichKey_DefaultDelay = 500
-let g:WhichKey_FontSize = 14
-let g:WhichKey_PrefixColor = "orange"
-let g:WhichKey_PrefixStype = "italic"
-
-let g:WhichKeyDesc_yank_to_clipboard = "<leader>y yank to clipboard"
-let g:WhichKeyDesc_paste_from_clipboard = "<leader>p paste from clipboard"
-
-let g:WhichKeyDesc_quick_actions = "<leader>a quick actions"
-let g:WhichKeyDesc_goto_next_error = "<leader>e goto next error"
-let g:WhichKeyDesc_QuickFixes = "<leader>f quickfixes"
-let g:WhichKeyDesc_gnerate = "<leader>g generate"
-let g:WhichKeyDesc_rename_element = "<leader>r rename element"
-let g:WhichKeyDesc_surroundWith = "<leader>s surround with"
-let g:WhichKeyDesc_refactoringmenu = "<leader>R refactoring menu"
-let g:WhichKeyDesc_gotodeclaration = "<leader>b goto declaration"
-let g:WhichKeyDesc_commentbylinecomment = "<leader>c comment by line comment"
-let g:WhichKeyDesc_commentbyblockcomment = "<leader>C comment by block comment"
 
 """ Common settings
 set hlsearch
@@ -43,13 +20,17 @@ set autoindent
 set showcmd
 set showmode
 
+set scrolloff=5
 
 """ Idea settings
 set ideajoin
 
 """ Mappings
+map ]d <Action>(GotoNextError)
+map [d <Action>(GotoPreviousError)
+map gd <Action>(GotoDeclaration)
+
 map <leader>a :action QuickActions<CR>
-map <leader>e :action GotoNextError<CR>
 map <leader>f :action QuickFixes<CR>
 map <leader>g :action Generate<CR>
 map <leader>r :action RenameElement<CR>
@@ -86,5 +67,3 @@ map \G4 :action GotoBookmark4<CR>
 map \G5 :action GotoBookmark5<CR>
 map \G6 :action GotoBookmark6<CR>
 map \G7 :action GotoBookmark7<CR>
-map \G8 :action GotoBookmark8<CR>
-map \G9 :action GotoBookmark9<CR>
