@@ -105,6 +105,11 @@ autoload -U bip bup
 # aliases
 source "$ZDOTDIR/alias.zsh"
 
+# homebrew integration
+if [ -f /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+
 # fzf shell integration
 if [ ! -z $(command -v fzf) ]; then
   eval "$(fzf --zsh)"
