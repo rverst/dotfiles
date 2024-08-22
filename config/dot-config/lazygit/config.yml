@@ -22,9 +22,6 @@ git:
     - 'prod'
     - 'production'
   skipHookPrefix: 'WIP'
-  commitPrefix:
-    pattern: "^\\w+\\/(\\w+-\\d+).*"
-    replace: '[$1] '
 
 os:
   editPreset: 'nvim'
