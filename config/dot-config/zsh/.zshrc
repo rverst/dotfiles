@@ -12,6 +12,8 @@ path=(~/.local/bin ~/.local/scripts $path)
 export HOMEBREW_NO_ENV_HINTS=1
 export GPG_TTY=$(tty)
 export FZF_DEFAULT_OPTS='--bind ctrl-a:accept --height 40% --tmux 80%'
+export LC_CTYPE=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
 
 #vi mode
 bindkey -v
