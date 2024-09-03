@@ -1,0 +1,46 @@
+#!/usr/bin/env zsh
+# Create a new tmux session or attach to an existing one
+#
+# Usage:
+# `tm` - will allow you to select a tmux session to attach to or create a new one based
+#        on a template in ~/.config/tmux/sessions.
+#
+# `tm <session-name>` - will attach to the specified tmux session if it exists or create it.
+#
+
+SESSION_TEMPLATE_DIR="$HOME/.config/tmux/sessions"
+
+[[ -n "$TMUX" ]] && change="switch-client" || change="attach-session"
+
+if [ $1 ]; then
+  tmux $change -t "$1" 2>/dev/null || (tmux new-session -d -s $1 && tmux $change -t "$1")
+  return
+fi
+
+running=$(tmux list-sessions -F "#{session_name}" 2>/dev/null)
+templates=$(find "$SESSION_TEMPLATE_DIR/" -type f -exec basename {} \;)
+
+combined=()
+
+for session in ${(f)running}; do
+  combined+=("$session (attach)")
+done
+
+for template in ${(f)templates}; do
+  if [[ ! ${(f)running} =~ $template ]]; then
+    combined+=("$template (new-session)")
+  fi
+done
+
+selection=$(printf '%s\n' "${combined[@]}" | fzf)
+
+if [[ $selection == *"(attach)" ]]; then
+  session=$(echo $selection | awk '{print $1}')
+  tmux $change -t "$session"
+else
+  session=$(echo $selection | awk '{print $1}')
+  source "$SESSION_TEMPLATE_DIR/$session"
+  create_session "$session"
+  tmux $change -t "$session:1"
+fi
+

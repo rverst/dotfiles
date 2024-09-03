@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+# Find in files using rga and fzf
+# mnemonic [F]ind [I]n [A]ll Files
+
+if [ ! "$#" -gt 0 ]; then
+  echo "Need a string to search for!"
+  return 1
+fi
+
+file="$(rga --max-count=1 --ignore-case --files-with-matches --no-messages "$*" | fzf-tmux +m --preview="rga --ignore-case --pretty --context 10 '"$*"' {}")" && echo "opening $file" && open "$file" || return 1

@@ -102,7 +102,7 @@ zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color $realpath'
 
 # functions
 fpath=(~/.config/zsh/functions $fpath)
-autoload -U bip bup
+autoload -U bip bup fif fia tm
 
 # aliases
 source "$ZDOTDIR/alias.zsh"
@@ -115,6 +115,8 @@ fi
 # fzf shell integration
 if [ ! -z $(command -v fzf) ]; then
   eval "$(fzf --zsh)"
+  # use option + c for fzf-cd-widget (macos)
+  bindkey 'ç' fzf-cd-widget
 else
   bindkey '^r' history-incremental-search-backward
 fi
