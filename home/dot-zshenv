@@ -17,6 +17,10 @@ if [ "$(uname -s)" = "Darwin" ]; then
 
 	local link="/opt/homebrew/opt/node@"
 
+	if [ -L "${link}22" ]; then
+		alias node-22="setNode 22"
+		setNode 22 1
+	fi
 	if [ -L "${link}20" ]; then
 		alias node-20="setNode 20"
 		setNode 20 1

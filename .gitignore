@@ -2,3 +2,5 @@
 
 shell/.config/zsh/.zsh_plugins.zsh
 apps/Brewfile.lock.json
+config/dot-config/tmux/plugins
+config/dot-config/zsh/.zsh_sessions
