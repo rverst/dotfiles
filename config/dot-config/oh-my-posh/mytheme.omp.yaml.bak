@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json
+version: 2
+
+final_space: true
+console_title_template: "{{if .Root}}<p:red>(root)</>{{end}} {{.PWD}}"
+
+palette: 
+  red: '#c75646'
+  green: '#8eb33b'
+  yellow: '#d0b03c'
+  blue: '#4e90a7'
+  magenta: '#c8a0d1'
+  cyan: '#218693'
+  white: '#b0b0b0'
+  bblack: '#5d5d5d'
+  bred: '#e09690'
+  bgreen: '#cdee69'
+  byellow: '#ffe377'
+  bblue: '#9cd9f0'
+  bmagenta: '#fbb1f9'
+  bcyan: '#77dfd8'
+  bwhite: '#f7f7f7'
+
+blocks:
+- type: prompt
+  alignment: left
+  newline: true
+  segments:
+  - type: root
+    style: plain
+    foreground: "p:red"
+    template: 
+  - type: session
+    style: plain
+    foreground: "p:yellow"
+    template: "{{ if .SSHSession }}<p:bmagneta>  </>{{ end }}{{ .UserName }} "
+  - type: path
+    style: plain
+    foreground: "p:blue"
+    template: "{{ .Path }} "
+    properties:
+      style: full
+  - type: git
+    style: plain
+    foreground: "p:bblack"
+    template: "{{ .UpstreamIcon }}{{ .HEAD }}{{if .BranchStatus }} {{ .BranchStatus }}{{ end }}{{ if .Working.Changed }}<p:bmagenta>*</>{{ .Working.String }}{{ end }}{{ if and (.Working.Changed) (.Staging.Changed) }} |{{ end }}{{ if .Staging.Changed }} \uf046 {{ .Staging.String }}{{ end }}{{ if gt .StashCount 0 }} \ueb4b {{ .StashCount }}{{ end }} "
+    properties:
+      branch_ahead_icon: "<p:bcyan>⇡ </>"
+      branch_behind_icon: "<p:bcyan>⇣ </>"
+      branch_icon: " "
+      fetch_stash_count: true
+      fetch_status: true
+      fetch_upstream_icon: true
+      github_icon: ""
+
+- type: prompt
+  alignment: right
+  segments:
+  - type: project
+    style: plain
+    foreground: "#ffe377"
+    template: " {{ if .Error }}{{ .Error }}{{ else }}{{ if .Version }} {{.Version}}{{ end }} {{ if .Name }}{{ .Name }}{{ end }}{{ end }} "
+  - type: go
+    style: plain
+    foreground: "#7FD5EA"
+    template: " {{ .Full }} "
+  - type: lua
+    style: plain
+    foreground: "#4e90a7"
+    template: "  {{ .Full }} "
+  - type: node
+    style: plain
+    foreground: "#6CA35E"
+    template: "  {{ .Full }} "
+  - type: npm
+    style: plaint
+    foreground: "#ffeb3b"
+    template: " {{ .Full }} "
+  - type: rust
+    style: plaint
+    foreground: "#99908a"
+    template: " 󱘗 {{ .Full }} "
+  - type: java
+    style: plain
+    foreground: "#4063D8"
+    template: "  {{ .Full }}"
+  - type: kotlin
+    style: plain
+    foreground: "#906cff"
+    template: " 󱈙 {{ .Full }} "
+
+- type: rprompt
+  alignment: right
+  filler: "."
+  newline: false
+  overflow: hide
+  segments:
+  - type: status
+    style: plain
+    foreground: "p:red"
+    template: "{{ if gt .Code 0}}󱈸[{{ .Code }}]{{ end }}"
+  - type: executiontime
+    style: plain
+    foreground: "p:magenta"
+    template: " {{ .FormattedMs }} "
+    properties:
+      style: austin
+
+- type: prompt
+  alignment: left
+  segments:
+  - type: status
+    style: plain
+    foreground: "p:green"
+    foreground_templates:
+      - "{{ if gt .Code 0 }}p:bred{{ end }}"
+    template: "❯"
+    properties:
+      always_enabled: true
+  newline: true
+
+transient_prompt:
+  foreground: "p:magenta"
+  template: "❯ "
+
+secondary_prompt:
+  foreground: "p:green"
+  template: "❯❯ "
+
