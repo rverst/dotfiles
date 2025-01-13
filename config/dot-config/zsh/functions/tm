@@ -27,7 +27,7 @@ for session in ${(f)running}; do
 done
 
 for template in ${(f)templates}; do
-  if [[ ! ${(f)running} =~ $template ]]; then
+  if [[ ${running[(Ie)$template]} ]]; then
     combined+=("$template (new-session)")
   fi
 done
