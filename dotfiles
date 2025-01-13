@@ -90,9 +90,6 @@ EOF
 	git -C "${DOTFILES_DIR}" config filter.crypt.smudge "gpg --batch --yes --decrypt"
 	git -C "${DOTFILES_DIR}" config filter.crypt.required true
 
-	git -C "${DOTFILES_DIR}" config diff.crypt.binary true
-	git -C "${DOTFILES_DIR}" config diff.crypt.textconv "gpg --batch -yes -decrypt"
-
 	success "Git filters configured"
 }
 
@@ -130,6 +127,8 @@ function stow_private() {
 
 function do_install() {
 	info "Installing dotfiles"
+	ensure_exists "$HOME/.config"
+	ensure_exists "$HOME/.local"
 
 	if [[ -z "${DOT_UNA}" ]]; then
 		prompt_config
@@ -155,6 +154,9 @@ function do_install() {
 
 function do_reinstall() {
 	info "Reinstalling dotfiles"
+	ensure_exists "$HOME/.config"
+	ensure_exists "$HOME/.local"
+
 	stow_packages -R
 	stow_private -R
 }
@@ -171,7 +173,12 @@ function do_update() {
 		warn "Dotfiles repository is dirty. Commit or stash your changes first."
 		exit 1
 	fi
-	# TODO: check if local is up to date with remote -> no update needed
+
+	git -C ${DOTFILES_DIR} fetch origin ${DOTFILES_BRANCH}
+	if git -C ${DOTFILES_DIR} diff --quiet HEAD...origin/${DOTFILES_BRANCH}; then
+		info "Already up to date"
+		return 0
+	fi
 
 	stow_packages -D
 	stow_private -D

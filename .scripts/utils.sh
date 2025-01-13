@@ -11,6 +11,14 @@ __dir="$(cd "$(dirname "$0")" && pwd)"
 
 whence info >/dev/null || source "$__dir/print.sh"
 
+ensure_exists() {
+	local dir="$1"
+	if [[ -d "$dir" ]]; then
+		return 0
+	fi
+	mkdir -p "$dir"
+}
+
 get_config() {
 	local key="$1"
 	if [[ ! -f "${DOTFILES_CONFIG}" ]]; then
