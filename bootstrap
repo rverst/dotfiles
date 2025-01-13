@@ -3,8 +3,9 @@
 # bootstrap.sh
 # This script bootstraps the setup of a new machine. It checks
 # if the necessary dependencies are installed and installs them
-# if needed. After that, it runs the dotfiles script with --install.
+# if needed. After that, it runs the dotfiles script with `install`.
 #
+
 set -o errexit
 set -o nounset
 #set -o xtrace
@@ -15,33 +16,48 @@ __file="${__dir}/$(basename "$0")"
 __base="$(basename ${__file})"
 __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
-install_zsh() {
+install_package() {
+	package="$1"
 	dist=$(uname -s)
-	local uid=$(id -u)
+	uid=$(id -u)
 
-	if [ "$dist" = "Linux" ]; then
+	if [ "$dist" = "Darwin" ]; then
+		if ! command -v brew >/dev/null 2>&1; then
+			echo "Homebrew is required but not installed. Please install it first:"
+			echo "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+			exit 1
+		fi
+		brew install "$package"
+	elif [ "$dist" = "Linux" ]; then
 		if [ -f /etc/os-release ]; then
 			local v=$(cat /etc/os-release | grep -i -e "^id=" | sed -r "s/^id=(.+)/\1/i")
 			if [ "$v" = "debian" ] || [ "$v" = "ubuntu" ]; then
-				cmd="apt-get -y install zsh"
+				cmd="apt-get -y install $package"
 				[ $uid -gt 0 ] && cmd="sudo $cmd"
 				$cmd
 			elif [ "$v" = "arch" ]; then
-				cmd="pacman -S zsh"
+				cmd="pacman -S $package"
 				[ $uid -gt 0 ] && cmd="sudo $cmd"
-				cmd
+				$cmd
 			else
-				echo "linux variant not supported: $v" && exit 1
+				echo "Linux variant not supported: $v" && exit 1
 			fi
 		else
-			echo "not supported" && exit 1
+			echo "Unsupported Linux distribution" && exit 1
 		fi
+	else
+		echo "Operating system not supported: $dist" && exit 1
 	fi
+}
+
+install_zsh() {
+	install_package "zsh"
 
 	echo ""
 	zsh=$(command -v zsh)
 	echo "Setting 'zsh' as login shell, enter your"
 	echo "password when prompted"
+	uid=$(id -u)
 	if [ $uid -eq 0 ]; then
 		chsh -s "$zsh" $SUDO_USER || exit 1
 	else
@@ -52,6 +68,15 @@ install_zsh() {
 	echo "$__file"
 	exit 0
 }
+
+check_dependencies() {
+	if ! command -v gpg >/dev/null 2>&1; then
+		echo "Installing gpg..."
+		install_package "gnupg"
+	fi
+}
+
+check_dependencies
 
 echo ""
 if [ "$(expr "$SHELL" : '.*/\(.*\)')" = "zsh" ]; then

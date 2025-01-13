@@ -50,11 +50,11 @@ function cleanup() {
 function prompt_config() {
 	local env=$(get_config "core.environment")
 	if [[ -z "${env}" ]]; then
-		echo -n "Enter environment (work/home): "
+		echo -n "Enter environment name (e.g., work, home, personal): "
 		read env
-		while [[ "${env}" != "work" && "${env}" != "home" ]]; do
-			echo "Invalid environment. Please enter 'work' or 'home'"
-			echo -n "Enter environment (work/home): "
+		while [[ ! "${env}" =~ ^[a-zA-Z0-9_-]+$ ]]; do
+			echo "Invalid environment name. Please use only letters, numbers, underscores, or hyphens"
+			echo -n "Enter environment name: "
 			read env
 		done
 		set_config "core.environment" "${env}"
@@ -62,17 +62,26 @@ function prompt_config() {
 
 	local key_id=$(get_config "gpg.key")
 	if [[ -z "${key_id}" ]]; then
-		echo "\nAvailable GPG keys:"
-		gpg --list-secret-keys --keyid-format LONG
+		if command -v fzf >/dev/null 2>&1; then
+			key_id=$(gpg --list-secret-keys --keyid-format LONG |
+				awk '/^sec/{key=$2} /^uid/{if ($0 ~ /<.*@.*>/) {email=$0; sub(/.*</, "", email); sub(/>.*/, "", email); print key " " email}}' |
+				fzf --height=10 --prompt="Select GPG key > " |
+				awk '{print $1}' |
+				sed 's/.*\///')
+		else
+			echo "\nAvailable GPG keys:"
+			gpg --list-secret-keys --keyid-format LONG
 
-		echo -n "\nEnter GPG key ID for encryption: "
-		read key_id
-		while ! gpg --list-secret-keys "${key_id}" >/dev/null 2>&1; do
-			echo "Invalid GPG key ID. Please enter a valid key ID"
-			echo -n "Enter GPG key ID for encryption: "
+			echo -n "\nEnter GPG key ID for encryption: "
 			read key_id
-		done
-		set_config "gpg.key" "${key_id}"
+			while ! gpg --list-secret-keys "${key_id}" >/dev/null 2>&1; do
+				echo "Invalid GPG key ID. Please enter a valid key ID"
+				echo -n "Enter GPG key ID for encryption: "
+				read key_id
+			done
+		fi
+
+		[[ -n "${key_id}" ]] && set_config "gpg.key" "${key_id}"
 	fi
 }
 
@@ -89,6 +98,9 @@ EOF
 	git -C "${DOTFILES_DIR}" config filter.crypt.clean "gpg --batch --yes --encrypt --recipient ${GPG_KEY_ID}"
 	git -C "${DOTFILES_DIR}" config filter.crypt.smudge "gpg --batch --yes --decrypt"
 	git -C "${DOTFILES_DIR}" config filter.crypt.required true
+
+	git -C "${DOTFILES_DIR}" config diff.crypt.binary true
+	git -C "${DOTFILES_DIR}" config diff.crypt.textconv "gpg --batch --yes --decrypt"
 
 	success "Git filters configured"
 }
