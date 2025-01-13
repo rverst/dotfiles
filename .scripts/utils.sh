@@ -9,7 +9,26 @@ set -o pipefail
 
 __dir="$(cd "$(dirname "$0")" && pwd)"
 
-whence info >/dev/null || source "$__dir/functions.sh"
+whence info >/dev/null || source "$__dir/print.sh"
+
+get_config() {
+	local key="$1"
+	if [[ ! -f "${DOTFILES_CONFIG}" ]]; then
+		return 0
+	fi
+
+	if git config --file "${DOTFILES_CONFIG}" --get "${key}" >/dev/null 2>&1; then
+		git config --file "${DOTFILES_CONFIG}" --get "${key}"
+	else
+		return 0
+	fi
+}
+
+set_config() {
+	local key="$1"
+	local value="$2"
+	git config --file "${DOTFILES_CONFIG}" "${key}" "${value}"
+}
 
 setup_gitconfig() {
 	if [ -z "$(git config --global --include --get user.email)" ]; then

@@ -16,6 +16,7 @@ DOT_UNA=
 
 DOTFILES_BRANCH=main
 DOTFILES_DIR=${__dir}
+DOTFILES_CONFIG="${HOME}/.dotconfig"
 PACKAGES=$(find ${DOTFILES_DIR} -type d \( -name "apps" \) -prune -o -type d ! -name ".*" ! -name "." -print -maxdepth 1)
 
 usage() {
@@ -46,6 +47,55 @@ function cleanup() {
 	exit 0
 }
 
+function prompt_config() {
+	local env=$(get_config "core.environment")
+	if [[ -z "${env}" ]]; then
+		echo -n "Enter environment (work/home): "
+		read env
+		while [[ "${env}" != "work" && "${env}" != "home" ]]; do
+			echo "Invalid environment. Please enter 'work' or 'home'"
+			echo -n "Enter environment (work/home): "
+			read env
+		done
+		set_config "core.environment" "${env}"
+	fi
+
+	local key_id=$(get_config "gpg.key")
+	if [[ -z "${key_id}" ]]; then
+		echo "\nAvailable GPG keys:"
+		gpg --list-secret-keys --keyid-format LONG
+
+		echo -n "\nEnter GPG key ID for encryption: "
+		read key_id
+		while ! gpg --list-secret-keys "${key_id}" >/dev/null 2>&1; do
+			echo "Invalid GPG key ID. Please enter a valid key ID"
+			echo -n "Enter GPG key ID for encryption: "
+			read key_id
+		done
+		set_config "gpg.key" "${key_id}"
+	fi
+}
+
+function setup_git_filters() {
+	info "Setting up git filters for secret handling"
+
+	local gitattributes="${DOTFILES_DIR}/.gitattributes"
+	if [[ ! -f "${gitattributes}" ]]; then
+		cat >"${gitattributes}" <<EOF
+.private/**/* filter=crypt diff=crypt
+EOF
+	fi
+
+	git -C "${DOTFILES_DIR}" config filter.crypt.clean "gpg --batch --yes --encrypt --recipient ${GPG_KEY_ID}"
+	git -C "${DOTFILES_DIR}" config filter.crypt.smudge "gpg --batch --yes --decrypt"
+	git -C "${DOTFILES_DIR}" config filter.crypt.required true
+
+	git -C "${DOTFILES_DIR}" config diff.crypt.binary true
+	git -C "${DOTFILES_DIR}" config diff.crypt.textconv "gpg --batch -yes -decrypt"
+
+	success "Git filters configured"
+}
+
 function stow_packages() {
 	local flags=""
 	if [ -n "${DOT_DRY}" ]; then
@@ -54,14 +104,50 @@ function stow_packages() {
 	while read -r pkg_dir; do
 		local pkg=$(basename ${pkg_dir})
 		info "  package: ${pkg}"
-		stow --dotfiles ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
+		stow --ignore='\.DS_Store' --dotfiles ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
 	done <<<${PACKAGES}
 	success "Done\n"
 }
 
+function stow_private() {
+	local action="$1"
+	local env_dir="${DOTFILES_DIR}/.private/${DOT_ENV}"
+
+	if [[ ! -d "${env_dir}" ]]; then
+		info "No private files for environment: ${DOT_ENV}"
+		return 0
+	fi
+
+	info "Managing private files for environment: ${DOT_ENV}"
+
+	local flags=""
+	if [ -n "${DOT_DRY}" ]; then
+		flags="${flags}-nv"
+	fi
+
+	stow --ignore='\.DS_Store' --dotfiles ${flags} -t ${HOME} -d "${DOTFILES_DIR}/.private" ${action} "${DOT_ENV}"
+}
+
 function do_install() {
 	info "Installing dotfiles"
+
+	if [[ -z "${DOT_UNA}" ]]; then
+		prompt_config
+		DOT_ENV=$(get_config "core.environment")
+		GPG_KEY_ID=$(get_config "gpg.key")
+	fi
+
+	if [[ -z "${DOT_ENV}" || -z "${GPG_KEY_ID}" ]]; then
+		fail "Missing required configuration. Please run without -u flag first or create a configuration file."
+		exit 1
+	fi
+
+	info "Using environment: ${DOT_ENV}"
+	info "Using GPG key: ${GPG_KEY_ID}"
+
+	setup_git_filters
 	stow_packages -S
+	stow_private -S
 
 	[ -z $DOT_UNA ] && setup_gitconfig
 	setup_localrc
@@ -70,11 +156,13 @@ function do_install() {
 function do_reinstall() {
 	info "Reinstalling dotfiles"
 	stow_packages -R
+	stow_private -R
 }
 
 function do_uninstall() {
 	info "Uninstalling dotfiles"
 	stow_packages -D
+	stow_private -D
 }
 
 function do_update() {
@@ -86,15 +174,14 @@ function do_update() {
 	# TODO: check if local is up to date with remote -> no update needed
 
 	stow_packages -D
+	stow_private -D
 	git -C ${DOTFILES_DIR} pull origin ${DOTFILES_BRANCH}
 	git submodule update --recursive
 	stow_packages -S
+	stow_private -S
 }
 
 function main() {
-	source "$__dir/.scripts/print.sh"
-	source "$__dir/.scripts/utils.sh"
-
 	OPTIND=1
 	OPTERR=0
 	while getopts "hnsu:" opt; do
@@ -144,5 +231,10 @@ function main() {
 
 	cleanup
 }
+
+source "$__dir/.scripts/print.sh"
+source "$__dir/.scripts/utils.sh"
+DOT_ENV=$(get_config "core.environment")
+GPG_KEY_ID=$(get_config "gpg.key")
 
 main $@
