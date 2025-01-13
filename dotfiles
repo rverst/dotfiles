@@ -91,7 +91,7 @@ function setup_git_filters() {
 	local gitattributes="${DOTFILES_DIR}/.gitattributes"
 	if [[ ! -f "${gitattributes}" ]]; then
 		cat >"${gitattributes}" <<EOF
-.private/**/* filter=crypt diff=crypt
+.private/**/* filter=crypt diff=crypt eol=lf
 EOF
 	fi
 
