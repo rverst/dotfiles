@@ -1,0 +1,15 @@
+#!/usr/bin/env zsh
+# Check if the current git repository is clean
+
+if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+  echo "Not a git repository"
+  return 1
+fi
+if [[ -n $(git status -s) ]]; then
+  echo "Uncommitted changes"
+  return 1
+fi
+if [[ -n $(git log @{u}.. 2>/dev/null) ]]; then
+  echo "Unpushed changes"
+  return 1
+fi

@@ -1,0 +1,14 @@
+#!/usr/bin/env zsh
+# Execute a command in all subdirectories
+
+local command="$1"
+local current_dir=$(pwd)
+
+for dir in */; do
+    if [ -d "$dir" ]; then
+        echo "\nExecuting in $dir:"
+        cd "$dir"
+        eval $command
+        cd "$current_dir"
+    fi
+ done

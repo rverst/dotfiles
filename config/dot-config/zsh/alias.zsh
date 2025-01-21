@@ -49,6 +49,10 @@ alias ccat="highlight --out-format=ansi"
 # quick hack to make watch work with aliases
 alias watch='watch -c -d -t '
 
+alias gic="git_is_clean"
+alias be="batch_exec"
+alias bep="batch_exec_parallel"
+
 if [ "$(uname -s)" = "Linux" ]; then
 	# open, pbcopy and pbpaste on linux
 	if [ -z "$(command -v pbcopy)" ]; then

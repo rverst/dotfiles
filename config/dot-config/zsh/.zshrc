@@ -102,7 +102,7 @@ zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color $realpath'
 
 # functions
 fpath=(~/.config/zsh/functions $fpath)
-autoload -U bip bup fif fia tm
+autoload -U bip bup fif fia tm git_is_clean batch_exec batch_exec_parallel
 
 # aliases
 source "$ZDOTDIR/alias.zsh"

@@ -1,0 +1,12 @@
+#!/usr/bin/env zsh
+# Execute a command in all subdirectories in parallel
+# 
+
+local command="$1"
+for dir in */; do
+   if [ -d "$dir" ]; then
+       (cd "$dir" && eval $command) &
+   fi
+done
+wait
+
