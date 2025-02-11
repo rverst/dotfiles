@@ -26,6 +26,9 @@ git:
 os:
   editPreset: 'nvim'
 
+services:
+  'gitlab.fiege.com': 'gitlab:gitlab.fiege.com'
+
 disableStartupPopups: true
 notARepository: 'skip'
 
