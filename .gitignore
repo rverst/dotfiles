@@ -1,6 +1,6 @@
 .DS_Store
 
-shell/.config/zsh/.zsh_plugins.zsh
 apps/Brewfile.lock.json
-config/dot-config/tmux/plugins
+shell/.config/zsh/.zsh_plugins.zsh
 config/dot-config/zsh/.zsh_sessions
+config/dot-config/tmux/plugins
