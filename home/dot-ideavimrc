@@ -4,6 +4,7 @@ let mapleader=" "
 """ Vim plugins
 
 " https://github.com/TheBlob42/idea-which-key
+set which-key
 set notimeout
 " set timeoutlen=5000
 
@@ -30,15 +31,15 @@ map ]d <Action>(GotoNextError)
 map [d <Action>(GotoPreviousError)
 map gd <Action>(GotoDeclaration)
 
-map <leader>a :action QuickActions<CR>
-map <leader>f :action QuickFixes<CR>
-map <leader>g :action Generate<CR>
-map <leader>r :action RenameElement<CR>
-map <leader>s :action SurroundWith<CR>
-map <leader>R :action RefactoringMenu<CR>
-map <leader>b :action GotoDeclaration<CR>
-map <leader>c :action CommentByLineComment<CR>
-map <leader>C :action CommentByBlockComment<CR>
+map <leader>a <Action>(QuickActions)
+map <leader>f <Action>(QuickFixes)
+map <leader>g <Action>(Generate)
+map <leader>r <Action>(RenameElement)
+map <leader>s <Action>(SurroundWith)
+map <leader>R <Action>(RefactoringMenu)
+map <leader>b <Action>(GotoDeclaration)
+map <leader>c <Action>(CommentByLineComment)
+map <leader>C <Action>(CommentByBlockComment)
 
 map W w<CR>
 

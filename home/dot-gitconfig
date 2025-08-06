@@ -15,3 +15,8 @@
 	prompt = false
 [mergetool "nvim"]
 	cmd = nvim -d -c \"wincmd l\" -c \"norm ]c\" \"$LOCAL\" \"$MERGED\" \"$REMOTE\"
+[push]
+	autoSetupRemote = true
+[alias]
+	logo = log --graph --all --oneline
+	ammend = commit --ammend --no-edit --allow-empty
