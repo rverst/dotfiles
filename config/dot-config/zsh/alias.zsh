@@ -80,6 +80,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
 		if [ -z $2 ]; then node --version; fi
 	}
 
+	[ -L "/opt/homebrew/opt/node@22" ] && alias node-22="setNode 22"
 	[ -L "/opt/homebrew/opt/node@20" ] && alias node-20="setNode 20"
 	[ -L "/opt/homebrew/opt/node@18" ] && alias node-18="setNode 18"
 	[ -L "/opt/homebrew/opt/node@16" ] && alias node-16="setNode 16"

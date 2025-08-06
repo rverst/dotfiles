@@ -12,7 +12,6 @@ gui:
       - '⣻'
       - '⣽'
       - '⣾'
-
 git:
   paging:
     pager: 'diff-so-fancy'
@@ -22,28 +21,23 @@ git:
     - 'prod'
     - 'production'
   skipHookPrefix: 'WIP'
-
 os:
   editPreset: 'nvim'
-
 services:
   'gitlab.fiege.com': 'gitlab:gitlab.fiege.com'
-
 disableStartupPopups: true
 notARepository: 'skip'
-
 customCommands:
   - key: 'n'
     context: 'files'
     description: 'Commit witout signing'
-    subprocess: false
-    stream: true
     prompts:
       - type: 'input'
         title: 'Enter commit message'
         key: 'commitMessage'
         initialValue: ''
     command: 'git commit --no-gpg-sign -m {{.Form.commitMessage | quote}}'
+    output: log
   - key: 'N'
     context: 'localBranches'
     description: 'New branch with prefix'
