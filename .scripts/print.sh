@@ -33,23 +33,50 @@ fail() {
 }
 
 user_read() {
-	if [[ -z ${2-} ]]; then
-		echo -n "\r[ \033[0;33m??\033[0m ] $1: " >&2
+	local prompt="$1"
+	local default="${2:-}"
+	local var_name="$3"
+
+	if [[ -z ${default} ]]; then
+		echo -n "\r[ \033[0;33m??\033[0m ] $prompt: " >&2
 	else
-		echo -n "\r[ \033[0;33m??\033[0m ] $1 [$2]: " >&2
+		echo -n "\r[ \033[0;33m??\033[0m ] $prompt [$default]: " >&2
 	fi
+
+	local input
 	read input
-	[[ -z $input ]] && echo $2 || echo $input
+
+	if [[ -z $input ]]; then
+		eval "$var_name='$default'"
+	else
+		eval "$var_name='$input'"
+	fi
 }
 
 user_yesno() {
-	[[ -z ${2-} ]] && 2="n"
-	if [[ $2 == "y" || $2 == "Y" ]]; then
-		echo -n "\r[ \033[0;33m??\033[0m ] $1 [Y/n]: " >&2
+	local prompt="$1"
+	local default="${2:-n}"
+	local var_name="$3"
+
+	local default_display
+	if [[ "${default}" =~ ^[Yy] ]]; then
+		default_display="Y/n"
 	else
-		echo -n "\r[ \033[0;33m??\033[0m ] $1 [y/N]: " >&2
+		default_display="y/N"
 	fi
+
+	echo -n "\r[ \033[0;33m??\033[0m ] $prompt [$default_display]: " >&2
+
+	local input
 	read input
-	[[ -z $input ]] && input=$2
-	[[ $input == "y" || $input == "Y" ]] && echo 1 || echo 0
+
+	if [[ -z $input ]]; then
+		input="$default"
+	fi
+
+	if [[ "${input}" =~ ^[Yy] ]]; then
+		eval "$var_name=1"
+	else
+		eval "$var_name=0"
+	fi
 }

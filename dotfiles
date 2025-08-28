@@ -27,11 +27,21 @@ usage() {
 	echo ""
 	echo "The commands are:"
 	echo ""
-	echo "	install		install the dotfiles"
-	echo "	reinstall	reinstall the dotfiles (unlink->link)"
-	echo "	uninstall	uninstall the dotfiles (unlink)"
-	echo "	update		update the dotfiles (check remote repository)"
-	echo "	help		show this info"
+	echo "	install			install the dotfiles"
+	echo "	reinstall		reinstall the dotfiles (unlink->link)"
+	echo "	uninstall		uninstall the dotfiles (unlink)"
+	echo "	update			update the dotfiles (check remote repository)"
+	echo "	status			encrypt changes and check git status"
+	echo "	flavour [name]		show current flavour or switch to specified flavour"
+	echo "	reencrypt-all		re-encrypt all files with current recipients"
+	echo ""
+	echo "	add <file> [flavour|regular] [package]"
+	echo "				add existing file to dotfiles"
+	echo "				flavour: add to current flavour (encrypted)"
+	echo "				regular: add to regular package (default: home)"
+	echo "				no type: interactive selection"
+	echo ""
+	echo "	help			show this info"
 	echo ""
 	echo "Possible options are:"
 	echo ""
@@ -43,24 +53,68 @@ usage() {
 
 function cleanup() {
 	info "Cleanup"
+
+	# Clean up any temporary decrypted directories
+	find "${DOTFILES_DIR}/flavours" -maxdepth 1 -name "decrypted-*" -type d -exec rm -rf {} + 2>/dev/null || true
+
 	exit 0
+}
+
+function check_dependencies() {
+	if ! command -v age >/dev/null 2>&1; then
+		error "Age is required but not installed"
+		info "Install with: brew install age - or your package manager"
+		exit 1
+	fi
+
+	if ! command -v stow >/dev/null 2>&1; then
+		error "Stow is required but not installed"
+		exit 1
+	fi
 }
 
 function stow_packages() {
 	local flags=""
+	local current_flavour=$(flavour_get_current)
+	local flavour_stow_dir=""
+
 	if [ -n "${DOT_DRY}" ]; then
 		flags="${flags}-nv"
 	fi
+
+	# Prepare flavour files if needed
+	flavour_stow_dir=$(flavour_prepare_stow "${current_flavour}")
+
+	# Stow regular packages
 	while read -r pkg_dir; do
 		local pkg=$(basename ${pkg_dir})
+		# Skip flavours directory - handled separately
+		if [ "${pkg}" = "flavours" ]; then
+			continue
+		fi
 		info "  package: ${pkg}"
 		stow --dotfiles ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
 	done <<<${PACKAGES}
+
+	# Stow flavour files if they exist
+	if [ -n "${flavour_stow_dir}" ] && [ -d "${flavour_stow_dir}" ]; then
+		info "  package: flavours (${current_flavour})"
+		stow --dotfiles ${flags} -t ${HOME} -d "${DOTFILES_DIR}/flavours" $1 "decrypted-${current_flavour}"
+	fi
+
+	# Cleanup temporary flavour files after successful stow
+	if [ "$1" != "-D" ]; then
+		flavour_cleanup_stow "${current_flavour}"
+	fi
+
 	success "Done\n"
 }
 
 function do_install() {
-	info "Installing dotfiles"
+	check_dependencies
+	age_init
+
+	info "Installing dotfiles with flavour: $(flavour_get_current)"
 	stow_packages -S
 
 	[ -z $DOT_UNA ] && setup_gitconfig
@@ -68,7 +122,8 @@ function do_install() {
 }
 
 function do_reinstall() {
-	info "Reinstalling dotfiles"
+	check_dependencies
+	info "Reinstalling dotfiles with flavour: $(flavour_get_current)"
 	stow_packages -R
 }
 
@@ -78,12 +133,13 @@ function do_uninstall() {
 }
 
 function do_update() {
+	check_dependencies
 	info "Updating dotfiles"
+
 	if ! git -C ${DOTFILES_DIR} diff --exit-code >/dev/null; then
 		warn "Dotfiles repository is dirty. Commit or stash your changes first."
 		exit 1
 	fi
-	# TODO: check if local is up to date with remote -> no update needed
 
 	stow_packages -D
 	git -C ${DOTFILES_DIR} pull origin ${DOTFILES_BRANCH}
@@ -91,16 +147,116 @@ function do_update() {
 	stow_packages -S
 }
 
+function do_status() {
+	check_dependencies
+
+	info "Git Status:"
+	git -C ${DOTFILES_DIR} status --short
+
+	info "Current flavour: $(flavour_get_current)"
+
+	# Check and encrypt any changes in flavour files
+	flavour_encrypt_changes
+
+	# Show git status again after potential encryption
+	echo ""
+	info "Git Status after encryption check:"
+	git -C ${DOTFILES_DIR} status --short
+}
+
+function do_flavour() {
+	local target_flavour="$1"
+
+	if [ -z "${target_flavour}" ]; then
+		echo "Current flavour: $(flavour_get_current)"
+		echo ""
+		echo "Available flavours:"
+		flavour_list_available | sed 's/^/  /'
+		return
+	fi
+
+	# Validate flavour exists
+	if [ ! -d "${DOTFILES_DIR}/flavours/${target_flavour}" ]; then
+		error "Flavour '${target_flavour}' does not exist"
+		echo "Available flavours:"
+		flavour_list_available | sed 's/^/  /'
+		exit 1
+	fi
+
+	# Switch flavour
+	flavour_set_current "${target_flavour}"
+
+	# Re-install with new flavour
+	info "Switching to flavour: ${target_flavour}"
+	stow_packages -R
+}
+
+function do_reencrypt_all() {
+	check_dependencies
+	age_reencrypt_all
+}
+
+function do_add() {
+	local source_file="$1"
+	local add_type="$2"
+	local package_name="$3"
+
+	if [ -z "${source_file}" ]; then
+		error "No file specified"
+		usage
+		exit 1
+	fi
+
+	# Convert to absolute path
+	source_file=$(realpath "${source_file}" 2>/dev/null || echo "${source_file}")
+
+	case "${add_type}" in
+	"flavour")
+		check_dependencies
+		flavour_add_file "${source_file}"
+		;;
+	"regular" | "package")
+		add_regular_file "${source_file}" "${package_name:-home}"
+		;;
+	"")
+		# Interactive mode
+		check_dependencies
+		add_file_interactive "${source_file}"
+		;;
+	*)
+		error "Invalid add type: ${add_type}"
+		usage
+		exit 1
+		;;
+	esac
+
+	# Offer to commit changes
+	if [ -z "${DOT_UNA}" ]; then
+		echo ""
+		local commit_choice
+		user_yesno "Commit changes to git?" "y" commit_choice
+
+		if [[ "${commit_choice}" =~ ^[Yy] ]]; then
+			git -C "${DOTFILES_DIR}" add .
+			git -C "${DOTFILES_DIR}" commit -m "Add $(basename "${source_file}") to ${add_type:-dotfiles}"
+			info "Changes committed"
+		fi
+	fi
+}
+
 function main() {
 	source "$__dir/.scripts/print.sh"
 	source "$__dir/.scripts/utils.sh"
+	source "$__dir/.scripts/age.sh"
+	source "$__dir/.scripts/flavours.sh"
+	source "$__dir/.scripts/add.sh"
 
 	OPTIND=1
 	OPTERR=0
 	while getopts "hnsu:" opt; do
 		case "$opt" in
 		h)
-			show_help
+			usage
 			exit 0
 			;;
 		n)
@@ -134,6 +290,18 @@ function main() {
 		;;
 	update)
 		do_update
+		;;
+	status)
+		do_status
+		;;
+	flavour)
+		do_flavour "${2:-}"
+		;;
+	reencrypt-all)
+		do_reencrypt_all
+		;;
+	add)
+		do_add "${2:-}" "${3:-}" "${4:-}"
 		;;
 	*)
 		usage

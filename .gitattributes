@@ -1,0 +1,2 @@
+*.age binary
+flavours/**/*.age diff=age

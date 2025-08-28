@@ -4,6 +4,7 @@ tap "jandedobbeleer/oh-my-posh"
 tap "osx-cross/arm"
 tap "osx-cross/avr"
 
+brew "age"
 brew "bat"
 brew "cmake"
 brew "curl"

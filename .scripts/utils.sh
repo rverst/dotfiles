@@ -7,17 +7,19 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-__dir="$(cd "$(dirname "$0")" && pwd)"
-
-whence info >/dev/null || source "$__dir/functions.sh"
-
 setup_gitconfig() {
 	if [ -z "$(git config --global --include --get user.email)" ]; then
 		info "Setting up ~/.gitconfig.local"
 		local local_config="$HOME/.gitconfig.local"
-		local user_name=$(user_read "Your github commit author name?")
-		local user_email=$(user_read "Your github commit author email?")
-		local gpg_signing=$(user_yesno "Do you want to sign your commits with GPG?" "n")
+
+		local user_name
+		user_read "Your github commit author name?" "" user_name
+
+		local user_email
+		user_read "Your github commit author email?" "" user_email
+
+		local gpg_signing
+		user_yesno "Do you want to sign your commits with GPG?" "n" gpg_signing
 
 		if [ ! -z $DOT_DRY ]; then
 			info "DRY RUN: Would have written the following to $local_config"
