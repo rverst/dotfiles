@@ -1,0 +1,9 @@
+[user]
+	name = Robert Verst
+	email = robert@verst.eu
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true
+[gpg]
+	program = /opt/homebrew/bin/gpg

@@ -49,7 +49,6 @@ usage() {
 
 cleanup() {
 	info "Cleanup"
-	find "${DOTFILES_DIR}/flavours" -maxdepth 1 -name "decrypted-*" -type d -exec rm -rf {} + 2>/dev/null || true
 	exit 0
 }
 
@@ -100,7 +99,7 @@ stow_packages() {
 		stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}/flavours" "$1" "decrypted-${current_flavour}"
 	fi
 
-	if [ "$1" != "-D" ]; then
+	if [ "$1" == "-D" ]; then
 		flavour_cleanup_stow "${current_flavour}"
 	fi
 

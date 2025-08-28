@@ -3,6 +3,12 @@
 # Bootstrap a new machine:
 # - Ensure zsh is installed (strict dependency)
 # - Optionally set zsh as the default shell (opt-in)
+#!/usr/bin/env bash
+#
+# Bootstrap a new machine:
+# - Ensure zsh, stow, and age are installed (strict dependencies)
+# - Optionally set zsh as the default shell (opt-in)
+# - For macOS, install via Homebrew; if Homebrew is missing, prompt to install it
 # - Run dotfiles installer under bash
 set -o errexit
 set -o nounset
@@ -47,53 +53,119 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-install_zsh() {
-	local os
-	os=$(uname -s)
+ensure_homebrew() {
+	if command -v brew >/dev/null 2>&1; then
+		return 0
+	fi
+
+	echo "Homebrew is not installed."
+	if [ "${UNATTENDED}" -eq 1 ]; then
+		echo "Attempting to install Homebrew unattended..."
+		NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	else
+		echo "Homebrew is required to install dependencies on macOS."
+		echo "Install Homebrew now?"
+		read -r -p "Run the official Homebrew installer script? [Y/n] " ans
+		[ -z "${ans}" ] && ans="y"
+		if [[ "${ans}" =~ ^[Yy]$ ]]; then
+			NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+		else
+			echo "Please install Homebrew from https://brew.sh and re-run this script."
+			exit 1
+		fi
+	fi
+
+	# Add Homebrew to PATH for this session (Apple Silicon vs Intel)
+	if [ -x /opt/homebrew/bin/brew ]; then
+		eval "$(/opt/homebrew/bin/brew shellenv)"
+	elif [ -x /usr/local/bin/brew ]; then
+		eval "$(/usr/local/bin/brew shellenv)"
+	fi
+
+	if ! command -v brew >/dev/null 2>&1; then
+		echo "Homebrew installation appears to have failed or brew is not in PATH."
+		echo "Make sure brew is installed and available, then re-run."
+		exit 1
+	fi
+}
+
+install_brew_pkg_if_missing() {
+	local pkg="$1"
+	if ! brew list --versions "${pkg}" >/dev/null 2>&1; then
+		echo "Installing ${pkg} via Homebrew..."
+		brew install "${pkg}"
+	fi
+}
+
+install_linux_pkgs() {
+	# Accepts a list of package names to install with the detected package manager
 	local uid
 	uid=$(id -u)
 	local SUDO=""
 	[ "${uid}" -ne 0 ] && SUDO="sudo"
 
-	if [ "${os}" = "Linux" ]; then
-		if [ -f /etc/os-release ]; then
-			# shellcheck disable=SC1091
-			. /etc/os-release
-			case "${ID}" in
-			debian | ubuntu)
-				${SUDO} apt-get update -y
-				${SUDO} apt-get install -y zsh
-				;;
-			arch | archlinux)
-				${SUDO} pacman -Sy --noconfirm zsh
-				;;
-			fedora)
-				${SUDO} dnf install -y zsh
-				;;
-			opensuse* | sles)
-				${SUDO} zypper install -y zsh
-				;;
-			*)
-				echo "Linux variant not explicitly supported: ${ID}"
-				echo "Please install 'zsh' using your package manager and re-run."
-				exit 1
-				;;
-			esac
-		else
-			echo "/etc/os-release not found; cannot determine how to install zsh."
-			exit 1
-		fi
-	elif [ "${os}" = "Darwin" ]; then
-		if command -v brew >/dev/null 2>&1; then
-			brew install zsh
-		else
-			echo "Homebrew not found. Install Homebrew, then run: brew install zsh"
-			exit 1
-		fi
-	else
-		echo "Unsupported OS: ${os}"
+	if [ ! -f /etc/os-release ]; then
+		echo "/etc/os-release not found; cannot determine package manager."
 		exit 1
 	fi
+
+	# shellcheck disable=SC1091
+	. /etc/os-release
+	case "${ID}" in
+	debian | ubuntu)
+		${SUDO} apt-get update -y
+		${SUDO} apt-get install -y "$@"
+		;;
+	arch | archlinux)
+		${SUDO} pacman -Sy --noconfirm "$@"
+		;;
+	fedora)
+		${SUDO} dnf install -y "$@"
+		;;
+	opensuse* | sles)
+		${SUDO} zypper install -y "$@"
+		;;
+	*)
+		echo "Linux variant not explicitly supported: ${ID}"
+		echo "Please install packages manually: $*"
+		exit 1
+		;;
+	esac
+}
+
+ensure_cmd() {
+	# ensure_cmd <command> <linux-package> <brew-formula>
+	local cmd="$1"
+	local linux_pkg="$2"
+	local brew_pkg="$3"
+
+	if command -v "${cmd}" >/dev/null 2>&1; then
+		return 0
+	fi
+
+	local os
+	os=$(uname -s)
+	if [ "${os}" = "Darwin" ]; then
+		ensure_homebrew
+		install_brew_pkg_if_missing "${brew_pkg}"
+	elif [ "${os}" = "Linux" ]; then
+		install_linux_pkgs "${linux_pkg}"
+	else
+		echo "Unsupported OS: ${os}"
+		echo "Please install '${cmd}' manually and re-run."
+		exit 1
+	fi
+
+	if ! command -v "${cmd}" >/dev/null 2>&1; then
+		echo "Failed to install '${cmd}'. Please install it manually and re-run."
+		exit 1
+	fi
+}
+
+install_dependencies() {
+	ensure_cmd "zsh" "zsh" "zsh"
+	ensure_cmd "stow" "stow" "stow"
+	ensure_cmd "age" "age" "age"
 }
 
 maybe_set_default_shell_to_zsh() {
@@ -132,23 +204,7 @@ maybe_set_default_shell_to_zsh() {
 }
 
 echo ""
-if ! command -v zsh >/dev/null 2>&1; then
-	if [ "${UNATTENDED}" -eq 1 ]; then
-		install_zsh
-	else
-		echo "'zsh' is required by these dotfiles but is not installed."
-		read -r -p "Install 'zsh' now? [Y/n] " a
-		[ -z "${a}" ] && a="y"
-		if [[ "${a}" =~ ^[Yy]$ ]]; then
-			install_zsh
-		else
-			echo "Cannot proceed without zsh. Exiting."
-			exit 1
-		fi
-	fi
-fi
-
-# Optionally set zsh as default shell (opt-in)
+install_dependencies
 maybe_set_default_shell_to_zsh
 
 # Always run the dotfiles script under bash (the scripts use bashisms)

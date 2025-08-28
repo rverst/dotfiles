@@ -41,7 +41,6 @@ fail() {
 }
 
 # Reads input into the variable name passed in $3
-# Avoid dangerous eval by validating var name. Use read -r.
 user_read() {
 	local prompt="$1"
 	local default="${2:-}"

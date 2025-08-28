@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env bash
 
 AGE_DIR="${DOTFILES_DIR}/.age"
 AGE_KEYS_FILE="${AGE_DIR}/keys.txt"
@@ -7,35 +7,36 @@ AGE_RECIPIENTS_FILE="${AGE_DIR}/recipients.txt"
 age_init() {
 	info "Initializing Age encryption..."
 
-	if [ ! -d "${AGE_DIR}" ]; then
-		mkdir -p "${AGE_DIR}"
-	fi
+	mkdir -p "${AGE_DIR}"
 
-	# Generate new keypair if none exists
 	if [ ! -f "${AGE_KEYS_FILE}" ]; then
 		info "Generating new Age keypair..."
 		age-keygen -o "${AGE_KEYS_FILE}" 2>/dev/null
 		chmod 600 "${AGE_KEYS_FILE}"
 
-		# Extract public key and add to recipients
-		local pubkey=$(age-keygen -y "${AGE_KEYS_FILE}")
-		echo "# Machine: $(hostname) - $(date)" >>"${AGE_RECIPIENTS_FILE}"
-		echo "${pubkey}" >>"${AGE_RECIPIENTS_FILE}"
-		echo "" >>"${AGE_RECIPIENTS_FILE}"
+		local pubkey
+		pubkey=$(age-keygen -y "${AGE_KEYS_FILE}")
+		{
+			echo "# Machine: $(hostname) - $(date)"
+			echo "${pubkey}"
+			echo ""
+		} >>"${AGE_RECIPIENTS_FILE}"
 
 		success "New Age keypair generated"
 		info "Public key added to recipients file"
 	fi
 
-	# Test if we can decrypt existing files
 	if ! age_can_decrypt_existing; then
 		warn "Cannot decrypt existing encrypted files"
 		info "Adding this machine's public key to recipients..."
 
-		local pubkey=$(age-keygen -y "${AGE_KEYS_FILE}")
-		echo "# Machine: $(hostname) - $(date)" >>"${AGE_RECIPIENTS_FILE}"
-		echo "${pubkey}" >>"${AGE_RECIPIENTS_FILE}"
-		echo "" >>"${AGE_RECIPIENTS_FILE}"
+		local pubkey
+		pubkey=$(age-keygen -y "${AGE_KEYS_FILE}")
+		{
+			echo "# Machine: $(hostname) - $(date)"
+			echo "${pubkey}"
+			echo ""
+		} >>"${AGE_RECIPIENTS_FILE}"
 
 		warn "Re-encryption needed on a machine that can decrypt existing files"
 		warn "Run 'dotfiles reencrypt-all' on another machine, then pull changes"
@@ -46,9 +47,10 @@ age_init() {
 }
 
 age_can_decrypt_existing() {
-	local test_files=$(find "${DOTFILES_DIR}/flavours" -name "*.age" -type f | head -1)
-	if [ -n "${test_files}" ]; then
-		echo "test" | age -d -i "${AGE_KEYS_FILE}" "${test_files}" >/dev/null 2>&1
+	local test_file
+	test_file=$(find "${DOTFILES_DIR}/flavours" -type f -name "*.age" -print -quit 2>/dev/null || true)
+	if [ -n "${test_file}" ]; then
+		age -d -i "${AGE_KEYS_FILE}" "${test_file}" >/dev/null 2>&1
 		return $?
 	fi
 	return 0
@@ -82,29 +84,23 @@ age_reencrypt_all() {
 	info "Re-encrypting all files with current recipients..."
 
 	local flavour_dir="${DOTFILES_DIR}/flavours"
-	local temp_dir=$(mktemp -d)
+	local temp_dir
+	temp_dir=$(mktemp -d)
 	local reencrypted=0
 
-	trap "rm -rf ${temp_dir}" EXIT
+	trap 'rm -rf -- "${temp_dir}"' EXIT
 
-	for flavour in work personal server; do
-		local flavour_path="${flavour_dir}/${flavour}"
-		if [ ! -d "${flavour_path}" ]; then
-			continue
-		fi
-
+	local flavour
+	while IFS= read -r flavour; do
+		[ -z "${flavour}" ] && continue
 		info "Processing flavour: ${flavour}"
-
-		find "${flavour_path}" -name "*.age" -type f | while read -r encrypted_file; do
-			local relative_path="${encrypted_file#${flavour_path}/}"
+		while IFS= read -r -d '' encrypted_file; do
+			local relative_path="${encrypted_file#${flavour_dir}/${flavour}/}"
 			local temp_decrypted="${temp_dir}/${relative_path%.age}"
 
-			# Create directory structure
 			mkdir -p "$(dirname "${temp_decrypted}")"
 
-			# Decrypt
 			if age_decrypt_file "${encrypted_file}" "${temp_decrypted}"; then
-				# Re-encrypt
 				if age_encrypt_file "${temp_decrypted}" "${encrypted_file}"; then
 					info "  ✓ ${relative_path}"
 					reencrypted=$((reencrypted + 1))
@@ -114,8 +110,8 @@ age_reencrypt_all() {
 			else
 				error "  ✗ Failed to decrypt ${relative_path}"
 			fi
-		done
-	done
+		done < <(find "${flavour_dir}/${flavour}" -type f -name '*.age' -print0 2>/dev/null)
+	done < <(find "${flavour_dir}" -mindepth 1 -maxdepth 1 -type d ! -name 'decrypted-*' -printf '%f\n' 2>/dev/null)
 
 	success "Re-encrypted ${reencrypted} files"
 }

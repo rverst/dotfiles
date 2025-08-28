@@ -172,17 +172,19 @@ flavour_add_file() {
 	return 0
 }
 
+# Replace flavour_prepare_stow with this version
 flavour_prepare_stow() {
 	local flavour="$1"
 	local flavour_dir="${DOTFILES_DIR}/flavours/${flavour}"
 	local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${flavour}"
 
 	if [ ! -d "${flavour_dir}" ]; then
-		info "No flavour directory for: ${flavour}"
+		info "No flavour directory for: ${flavour}" >&2
+		echo ""
 		return 0
 	fi
 
-	[ ! -d "${decrypted_dir}" ] || rm -rf "${decrypted_dir}"
+	# Do NOT remove existing decrypted dir; it is the local source-of-truth
 	mkdir -p "${decrypted_dir}"
 
 	find "${flavour_dir}" -type f | while IFS= read -r file; do
@@ -193,27 +195,41 @@ flavour_prepare_stow() {
 
 		if [[ "${file}" == *.age ]]; then
 			local decrypted_name="${target_path%.age}"
+
+			# If user already has a decrypted file, keep it (do not overwrite their edits)
+			if [ -f "${decrypted_name}" ]; then
+				continue
+			fi
+
 			if age_decrypt_file "${file}" "${decrypted_name}"; then
-				info "  ✓ Decrypted ${relative_path}"
+				info "  ✓ Decrypted ${relative_path}" >&2
 			else
+				# Create placeholder only if no decrypted file existed
 				cat >"${decrypted_name}" <<EOF
 # File: ${relative_path}
 # Could not decrypt on this machine. Ensure this machine's public key is in .age/recipients.txt,
 # then run 'dotfiles reencrypt-all' on a machine that can decrypt, and pull changes.
 EOF
-				warn "  ✗ Failed to decrypt ${relative_path} - placeholder created"
+				warn "  ✗ Failed to decrypt ${relative_path} - placeholder created" >&2
 			fi
 		else
-			cp "${file}" "${target_path}"
+			# Unencrypted flavour files: copy into decrypted workspace only if missing
+			if [ ! -f "${target_path}" ]; then
+				cp "${file}" "${target_path}"
+			fi
 		fi
 	done
 
 	echo "${decrypted_dir}"
 }
 
+# Make cleanup a no-op (keep for compatibility if referenced)
+flavour_cleanup_stow() { :; }
+
 flavour_cleanup_stow() {
 	local flavour="$1"
 	local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${flavour}"
+	info "tearing down decrypted flavour directory...${decrypted_dir}" >&2
 
 	[ ! -d "${decrypted_dir}" ] || rm -rf "${decrypted_dir}"
 }
