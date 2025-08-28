@@ -1,13 +1,12 @@
-#!/usr/bin/env zsh
-#
-# dotfiles
-#
+#!/usr/bin/env bash
+
 set -o errexit
 set -o nounset
+set -o pipefail
 
 __dir="$(cd "$(dirname "$0")" && pwd)"
 __file="${__dir}/$(basename "$0")"
-__base="$(basename ${__file})"
+__base="$(basename "${__file}")"
 __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
 DOT_DRY=
@@ -15,52 +14,46 @@ DOT_SIL=
 DOT_UNA=
 
 DOTFILES_BRANCH=main
-DOTFILES_DIR=${__dir}
-PACKAGES=$(find ${DOTFILES_DIR} -type d \( -name "apps" \) -prune -o -type d ! -name ".*" ! -name "." -print -maxdepth 1)
+DOTFILES_DIR="${__dir}"
+# Top-level packages (excluding hidden dirs and flavours)
+PACKAGES="$(find "${DOTFILES_DIR}" -mindepth 1 -maxdepth 1 -type d ! -name '.*' ! -name 'flavours' -print 2>/dev/null)"
 
 usage() {
 	echo "Dotfiles installer"
 	echo ""
 	echo "Usage:"
 	echo ""
-	echo "	dotfiles [options] <command> "
+	echo "  dotfiles [options] <command> [args]"
 	echo ""
-	echo "The commands are:"
+	echo "Commands:"
+	echo "  install          install the dotfiles"
+	echo "  reinstall        reinstall the dotfiles (unlink->link)"
+	echo "  uninstall        uninstall the dotfiles (unlink)"
+	echo "  update           update the dotfiles (check remote repository)"
+	echo "  status           encrypt changes and check git status"
+	echo "  flavour [name]   show current flavour or switch to specified flavour"
+	echo "  reencrypt-all    re-encrypt all files with current recipients"
 	echo ""
-	echo "	install			install the dotfiles"
-	echo "	reinstall		reinstall the dotfiles (unlink->link)"
-	echo "	uninstall		uninstall the dotfiles (unlink)"
-	echo "	update			update the dotfiles (check remote repository)"
-	echo "	status			encrypt changes and check git status"
-	echo "	flavour [name]		show current flavour or switch to specified flavour"
-	echo "	reencrypt-all		re-encrypt all files with current recipients"
+	echo "  add <file> [flavour|regular] [package]"
+	echo "                 add existing file to dotfiles"
+	echo "                 flavour: add to current flavour (encrypted)"
+	echo "                 regular: add to regular package (default: home)"
+	echo "                 no type: interactive selection"
 	echo ""
-	echo "	add <file> [flavour|regular] [package]"
-	echo "				add existing file to dotfiles"
-	echo "				flavour: add to current flavour (encrypted)"
-	echo "				regular: add to regular package (default: home)"
-	echo "				no type: interactive selection"
-	echo ""
-	echo "	help			show this info"
-	echo ""
-	echo "Possible options are:"
-	echo ""
-	echo "	-n		dry run"
-	echo "	-s		silent"
-	echo "	-u		unattended"
+	echo "Options:"
+	echo "  -n      dry run"
+	echo "  -s      silent"
+	echo "  -u      unattended"
 	echo ""
 }
 
-function cleanup() {
+cleanup() {
 	info "Cleanup"
-
-	# Clean up any temporary decrypted directories
 	find "${DOTFILES_DIR}/flavours" -maxdepth 1 -name "decrypted-*" -type d -exec rm -rf {} + 2>/dev/null || true
-
 	exit 0
 }
 
-function check_dependencies() {
+check_dependencies() {
 	if ! command -v age >/dev/null 2>&1; then
 		error "Age is required but not installed"
 		info "Install with: brew install age - or your package manager"
@@ -71,100 +64,102 @@ function check_dependencies() {
 		error "Stow is required but not installed"
 		exit 1
 	fi
+
+	if ! command -v zsh >/dev/null 2>&1; then
+		error "zsh is required (for interactive shell configs) but not installed"
+		info "Please run './bootstrap' to install it, or install it via your package manager"
+		exit 1
+	fi
 }
 
-function stow_packages() {
+stow_packages() {
 	local flags=""
-	local current_flavour=$(flavour_get_current)
+	local current_flavour
+	current_flavour=$(flavour_get_current)
 	local flavour_stow_dir=""
 
-	if [ -n "${DOT_DRY}" ]; then
+	if [ -n "${DOT_DRY:-}" ]; then
 		flags="${flags}-nv"
 	fi
 
-	# Prepare flavour files if needed
 	flavour_stow_dir=$(flavour_prepare_stow "${current_flavour}")
 
-	# Stow regular packages
-	while read -r pkg_dir; do
-		local pkg=$(basename ${pkg_dir})
-		# Skip flavours directory - handled separately
+	while IFS= read -r pkg_dir; do
+		[ -z "${pkg_dir}" ] && continue
+		local pkg
+		pkg=$(basename "${pkg_dir}")
 		if [ "${pkg}" = "flavours" ]; then
 			continue
 		fi
 		info "  package: ${pkg}"
-		stow --dotfiles ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
-	done <<<${PACKAGES}
+		stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}" "$1" "${pkg}"
+	done <<<"${PACKAGES}"
 
-	# Stow flavour files if they exist
 	if [ -n "${flavour_stow_dir}" ] && [ -d "${flavour_stow_dir}" ]; then
 		info "  package: flavours (${current_flavour})"
-		stow --dotfiles ${flags} -t ${HOME} -d "${DOTFILES_DIR}/flavours" $1 "decrypted-${current_flavour}"
+		stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}/flavours" "$1" "decrypted-${current_flavour}"
 	fi
 
-	# Cleanup temporary flavour files after successful stow
 	if [ "$1" != "-D" ]; then
 		flavour_cleanup_stow "${current_flavour}"
 	fi
 
-	success "Done\n"
+	success "Done"
 }
 
-function do_install() {
+do_install() {
 	check_dependencies
 	age_init
 
 	info "Installing dotfiles with flavour: $(flavour_get_current)"
 	stow_packages -S
 
-	[ -z $DOT_UNA ] && setup_gitconfig
+	[ -z "${DOT_UNA:-}" ] && setup_gitconfig
 	setup_localrc
 }
 
-function do_reinstall() {
+do_reinstall() {
 	check_dependencies
 	info "Reinstalling dotfiles with flavour: $(flavour_get_current)"
 	stow_packages -R
 }
 
-function do_uninstall() {
+do_uninstall() {
 	info "Uninstalling dotfiles"
 	stow_packages -D
 }
 
-function do_update() {
+do_update() {
 	check_dependencies
 	info "Updating dotfiles"
 
-	if ! git -C ${DOTFILES_DIR} diff --exit-code >/dev/null; then
+	if ! git -C "${DOTFILES_DIR}" diff --exit-code >/dev/null; then
 		warn "Dotfiles repository is dirty. Commit or stash your changes first."
 		exit 1
 	fi
 
 	stow_packages -D
-	git -C ${DOTFILES_DIR} pull origin ${DOTFILES_BRANCH}
-	git submodule update --recursive
+	git -C "${DOTFILES_DIR}" pull origin "${DOTFILES_BRANCH}"
+	git -C "${DOTFILES_DIR}" submodule update --recursive
 	stow_packages -S
 }
 
-function do_status() {
+do_status() {
 	check_dependencies
 
 	info "Git Status:"
-	git -C ${DOTFILES_DIR} status --short
+	git -C "${DOTFILES_DIR}" status --short
 
 	info "Current flavour: $(flavour_get_current)"
 
-	# Check and encrypt any changes in flavour files
 	flavour_encrypt_changes
 
-	# Show git status again after potential encryption
 	echo ""
 	info "Git Status after encryption check:"
-	git -C ${DOTFILES_DIR} status --short
+	git -C "${DOTFILES_DIR}" status --short
 }
 
-function do_flavour() {
+do_flavour() {
 	local target_flavour="$1"
 
 	if [ -z "${target_flavour}" ]; then
@@ -175,7 +170,6 @@ function do_flavour() {
 		return
 	fi
 
-	# Validate flavour exists
 	if [ ! -d "${DOTFILES_DIR}/flavours/${target_flavour}" ]; then
 		error "Flavour '${target_flavour}' does not exist"
 		echo "Available flavours:"
@@ -183,23 +177,21 @@ function do_flavour() {
 		exit 1
 	fi
 
-	# Switch flavour
 	flavour_set_current "${target_flavour}"
 
-	# Re-install with new flavour
 	info "Switching to flavour: ${target_flavour}"
 	stow_packages -R
 }
 
-function do_reencrypt_all() {
+do_reencrypt_all() {
 	check_dependencies
 	age_reencrypt_all
 }
 
-function do_add() {
-	local source_file="$1"
-	local add_type="$2"
-	local package_name="$3"
+do_add() {
+	local source_file="${1:-}"
+	local add_type="${2:-}"
+	local package_name="${3:-}"
 
 	if [ -z "${source_file}" ]; then
 		error "No file specified"
@@ -207,7 +199,6 @@ function do_add() {
 		exit 1
 	fi
 
-	# Convert to absolute path
 	source_file=$(realpath "${source_file}" 2>/dev/null || echo "${source_file}")
 
 	case "${add_type}" in
@@ -219,7 +210,6 @@ function do_add() {
 		add_regular_file "${source_file}" "${package_name:-home}"
 		;;
 	"")
-		# Interactive mode
 		check_dependencies
 		add_file_interactive "${source_file}"
 		;;
@@ -230,13 +220,12 @@ function do_add() {
 		;;
 	esac
 
-	# Offer to commit changes
-	if [ -z "${DOT_UNA}" ]; then
+	if [ -z "${DOT_UNA:-}" ]; then
 		echo ""
 		local commit_choice
 		user_yesno "Commit changes to git?" "y" commit_choice
 
-		if [[ "${commit_choice}" =~ ^[Yy] ]]; then
+		if [ "${commit_choice}" -eq 1 ]; then
 			git -C "${DOTFILES_DIR}" add .
 			git -C "${DOTFILES_DIR}" commit -m "Add $(basename "${source_file}") to ${add_type:-dotfiles}"
 			info "Changes committed"
@@ -244,16 +233,21 @@ function do_add() {
 	fi
 }
 
-function main() {
+main() {
+	# shellcheck source=/dev/null
 	source "$__dir/.scripts/print.sh"
+	# shellcheck source=/dev/null
 	source "$__dir/.scripts/utils.sh"
+	# shellcheck source=/dev/null
 	source "$__dir/.scripts/age.sh"
+	# shellcheck source=/dev/null
 	source "$__dir/.scripts/flavours.sh"
+	# shellcheck source=/dev/null
 	source "$__dir/.scripts/add.sh"
 
 	OPTIND=1
 	OPTERR=0
-	while getopts "hnsu:" opt; do
+	while getopts "hnsu" opt; do
 		case "$opt" in
 		h)
 			usage
@@ -272,13 +266,12 @@ function main() {
 			usage
 			exit 1
 			;;
-
 		esac
 	done
 	shift $((OPTIND - 1))
 	[ "${1:-}" = "--" ] && shift
 
-	case "$@" in
+	case "${1:-}" in
 	install)
 		do_install
 		;;
@@ -307,10 +300,9 @@ function main() {
 		usage
 		exit 1
 		;;
-
 	esac
 
 	cleanup
 }
 
-main $@
+main "$@"

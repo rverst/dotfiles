@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env bash
 
 add_regular_file() {
 	local source_file="$1"
@@ -9,30 +9,25 @@ add_regular_file() {
 		return 1
 	fi
 
-	# Default to 'home' package if not specified
 	[ -z "${package_name}" ] && package_name="home"
 
 	local package_dir="${DOTFILES_DIR}/${package_name}"
-
-	# Create package directory if it doesn't exist
 	mkdir -p "${package_dir}"
 
-	# Convert path to stow format
-	local filename=$(basename "${source_file}")
-	local dirname=$(dirname "${source_file}")
+	local filename
+	filename=$(basename "${source_file}")
+	local dirname
+	dirname=$(dirname "${source_file}")
 	local relative_home_path="${dirname#${HOME}/}"
 
-	# Build target path
 	local target_dir="${package_dir}"
 	if [ "${relative_home_path}" != "${dirname}" ] && [ "${relative_home_path}" != "." ]; then
-		# File is in subdirectory of HOME
 		target_dir="${package_dir}/${relative_home_path}"
 		mkdir -p "${target_dir}"
 	fi
 
 	local stow_filename
 	if [[ "${filename}" == .* ]]; then
-		# Dotfile - use stow's dot- prefix
 		stow_filename="dot-${filename#.}"
 	else
 		stow_filename="${filename}"
@@ -42,17 +37,15 @@ add_regular_file() {
 
 	info "Adding ${source_file} to package '${package_name}'"
 
-	# Copy the file
 	cp "${source_file}" "${target_file}"
 	success "File added as: ${package_name}/${relative_home_path:+${relative_home_path}/}${stow_filename}"
 
-	# Offer to backup/remove original
-	if [ -z "${DOT_UNA}" ]; then
+	if [ -z "${DOT_UNA:-}" ]; then
 		echo ""
 		local remove_choice
 		user_read "Remove original file? [y/N]" "N" remove_choice
-		if [[ "${remove_choice}" =~ ^[Yy] ]]; then
-			rm "${source_file}"
+		if [[ "${remove_choice}" =~ ^[Yy]$ ]]; then
+			rm -f -- "${source_file}"
 			info "Original file removed"
 		else
 			info "Original file kept (remember to remove it manually if needed)"
@@ -70,7 +63,7 @@ add_file_interactive() {
 		return 1
 	fi
 
-	if [ -z "${DOT_UNA}" ]; then
+	if [ -z "${DOT_UNA:-}" ]; then
 		echo ""
 		info "Add file: ${source_file}"
 		echo ""
@@ -84,13 +77,13 @@ add_file_interactive() {
 			user_read "Select option (1-3)" "" choice
 			case "${choice}" in
 			1)
-				# Force encryption
-				DOT_FORCE_ENCRYPT=1 flavour_add_file "${source_file}"
+				local DOT_FORCE_ENCRYPT=1
+				flavour_add_file "${source_file}"
 				return $?
 				;;
 			2)
-				# Force no encryption
-				DOT_FORCE_NO_ENCRYPT=1 flavour_add_file "${source_file}"
+				local DOT_FORCE_NO_ENCRYPT=1
+				flavour_add_file "${source_file}"
 				return $?
 				;;
 			3)
@@ -105,7 +98,6 @@ add_file_interactive() {
 			esac
 		done
 	else
-		# Unattended mode - add to flavour by default
 		flavour_add_file "${source_file}"
 		return $?
 	fi

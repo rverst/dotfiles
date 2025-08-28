@@ -1,64 +1,155 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 #
-# bootstrap.sh
-# This script bootstraps the setup of a new machine. It checks
-# if the necessary dependencies are installed and installs them
-# if needed. After that, it runs the dotfiles script with --install.
-#
+# Bootstrap a new machine:
+# - Ensure zsh is installed (strict dependency)
+# - Optionally set zsh as the default shell (opt-in)
+# - Run dotfiles installer under bash
 set -o errexit
 set -o nounset
-#set -o xtrace
+set -o pipefail
 
-# set `magic` variable to the directory of the script
 __dir="$(cd "$(dirname "$0")" && pwd)"
 __file="${__dir}/$(basename "$0")"
-__base="$(basename ${__file})"
+__base="$(basename "${__file}")"
 __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
-install_zsh() {
-	dist=$(uname -s)
-	local uid=$(id -u)
+SET_ZSH_DEFAULT=0
+UNATTENDED=0
 
-	if [ "$dist" = "Linux" ]; then
+usage() {
+	echo "Usage: ${__base} [--set-default-zsh] [--unattended]"
+	echo ""
+	echo "Options:"
+	echo "  --set-default-zsh   also set zsh as your default login shell (using chsh)"
+	echo "  --unattended        do not prompt (non-interactive)"
+	echo ""
+}
+
+while [ $# -gt 0 ]; do
+	case "${1}" in
+	--set-default-zsh)
+		SET_ZSH_DEFAULT=1
+		shift
+		;;
+	--unattended)
+		UNATTENDED=1
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		echo "Unknown option: ${1}"
+		usage
+		exit 1
+		;;
+	esac
+done
+
+install_zsh() {
+	local os
+	os=$(uname -s)
+	local uid
+	uid=$(id -u)
+	local SUDO=""
+	[ "${uid}" -ne 0 ] && SUDO="sudo"
+
+	if [ "${os}" = "Linux" ]; then
 		if [ -f /etc/os-release ]; then
-			local v=$(cat /etc/os-release | grep -i -e "^id=" | sed -r "s/^id=(.+)/\1/i")
-			if [ "$v" = "debian" ] || [ "$v" = "ubuntu" ]; then
-				cmd="apt-get -y install zsh"
-				[ $uid -gt 0 ] && cmd="sudo $cmd"
-				$cmd
-			elif [ "$v" = "arch" ]; then
-				cmd="pacman -S zsh"
-				[ $uid -gt 0 ] && cmd="sudo $cmd"
-				cmd
-			else
-				echo "linux variant not supported: $v" && exit 1
-			fi
+			# shellcheck disable=SC1091
+			. /etc/os-release
+			case "${ID}" in
+			debian | ubuntu)
+				${SUDO} apt-get update -y
+				${SUDO} apt-get install -y zsh
+				;;
+			arch | archlinux)
+				${SUDO} pacman -Sy --noconfirm zsh
+				;;
+			fedora)
+				${SUDO} dnf install -y zsh
+				;;
+			opensuse* | sles)
+				${SUDO} zypper install -y zsh
+				;;
+			*)
+				echo "Linux variant not explicitly supported: ${ID}"
+				echo "Please install 'zsh' using your package manager and re-run."
+				exit 1
+				;;
+			esac
 		else
-			echo "not supported" && exit 1
+			echo "/etc/os-release not found; cannot determine how to install zsh."
+			exit 1
+		fi
+	elif [ "${os}" = "Darwin" ]; then
+		if command -v brew >/dev/null 2>&1; then
+			brew install zsh
+		else
+			echo "Homebrew not found. Install Homebrew, then run: brew install zsh"
+			exit 1
+		fi
+	else
+		echo "Unsupported OS: ${os}"
+		exit 1
+	fi
+}
+
+maybe_set_default_shell_to_zsh() {
+	local zsh_path
+	zsh_path=$(command -v zsh)
+	if [ -z "${zsh_path}" ]; then
+		echo "zsh not found; cannot set as default shell"
+		return 1
+	fi
+
+	if [ "${UNATTENDED}" -eq 0 ] && [ "${SET_ZSH_DEFAULT}" -eq 0 ]; then
+		echo "'zsh' is installed. Do you want to make it your default shell?"
+		read -r -p "Set zsh as default shell now? [y/N] " ans
+		if [[ "${ans}" =~ ^[Yy]$ ]]; then
+			SET_ZSH_DEFAULT=1
 		fi
 	fi
 
-	echo ""
-	zsh=$(command -v zsh)
-	echo "Setting 'zsh' as login shell, enter your"
-	echo "password when prompted"
-	if [ $uid -eq 0 ]; then
-		chsh -s "$zsh" $SUDO_USER || exit 1
-	else
-		chsh -s "$zsh" || exit 1
+	if [ "${SET_ZSH_DEFAULT}" -eq 1 ]; then
+		echo "Setting 'zsh' as your login shell. You may be prompted for your password."
+		local uid
+		uid=$(id -u)
+		if command -v chsh >/dev/null 2>&1; then
+			if [ "${uid}" -eq 0 ]; then
+				chsh -s "${zsh_path}" "${SUDO_USER:-root}" || exit 1
+			else
+				chsh -s "${zsh_path}" || exit 1
+			fi
+			echo "Default shell set to: ${zsh_path}"
+			echo "You may need to log out and back in for changes to take effect."
+		else
+			echo "chsh not available; cannot set default shell automatically."
+			return 1
+		fi
 	fi
-	echo ""
-	echo "You need to logout and login again or reboot and call this script again:"
-	echo "$__file"
-	exit 0
 }
 
 echo ""
-if [ "$(expr "$SHELL" : '.*/\(.*\)')" = "zsh" ]; then
-	zsh "$__dir/dotfiles install"
-else
-	echo "'zsh' is not your default shell, these dotfiles are build on zsh."
-	read -p "Install 'zsh' and call \`chsh /usr/bin/zsh\` now [Y/n]" a
-	[ "$a" = "" ] && a=y
-	[ "$a" = "y" ] || [ "$a" = "Y" ] && install_zsh || exit 0
+if ! command -v zsh >/dev/null 2>&1; then
+	if [ "${UNATTENDED}" -eq 1 ]; then
+		install_zsh
+	else
+		echo "'zsh' is required by these dotfiles but is not installed."
+		read -r -p "Install 'zsh' now? [Y/n] " a
+		[ -z "${a}" ] && a="y"
+		if [[ "${a}" =~ ^[Yy]$ ]]; then
+			install_zsh
+		else
+			echo "Cannot proceed without zsh. Exiting."
+			exit 1
+		fi
+	fi
 fi
+
+# Optionally set zsh as default shell (opt-in)
+maybe_set_default_shell_to_zsh
+
+# Always run the dotfiles script under bash (the scripts use bashisms)
+bash "${__dir}/dotfiles" install
