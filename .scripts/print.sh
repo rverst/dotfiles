@@ -41,40 +41,38 @@ fail() {
 }
 
 # Reads input into the variable name passed in $3
+
 user_read() {
 	local prompt="$1"
 	local default="${2:-}"
-	local var_name="$3"
+	local result_var="$3"
 
-	if [[ ! "${var_name}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
-		error "Invalid variable name: ${var_name}"
-		return 1
-	fi
-
+	local input
 	if [[ -z "${default}" ]]; then
 		printf "%b%s: " "${_user_prefix}" "${prompt}" >&2
 	else
 		printf "%b%s [%s]: " "${_user_prefix}" "${prompt}" "${default}" >&2
 	fi
 
-	local input
 	IFS= read -r input
+	input="${input:-${default}}"
 
-	if [[ -z "${input}" ]]; then
-		printf -v "${var_name}" "%s" "${default}"
-	else
-		printf -v "${var_name}" "%s" "${input}"
+	if [[ ! "${result_var}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+		error "Invalid variable name: ${result_var}"
+		return 1
 	fi
+
+	printf -v "${result_var}" "%s" "${input}"
 }
 
-# Sets var_name to 1 for yes, 0 for no
+# Reads a yes/no input into the variable name passed in $3
 user_yesno() {
 	local prompt="$1"
 	local default="${2:-n}"
-	local var_name="$3"
+	local result_var="$3"
 
-	if [[ ! "${var_name}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
-		error "Invalid variable name: ${var_name}"
+	if [[ ! "${result_var}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+		error "Invalid variable name: ${result_var}"
 		return 1
 	fi
 
@@ -94,8 +92,8 @@ user_yesno() {
 	fi
 
 	if [[ "${input}" =~ ^[Yy]$ ]]; then
-		printf -v "${var_name}" "%d" 1
+		printf -v "${result_var}" "%d" 1
 	else
-		printf -v "${var_name}" "%d" 0
+		printf -v "${result_var}" "%d" 0
 	fi
 }

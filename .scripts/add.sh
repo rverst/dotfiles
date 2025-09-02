@@ -9,6 +9,18 @@ add_regular_file() {
 		return 1
 	fi
 
+	local resolved
+	resolved=$(resolve_path "${source_file}" 2>/dev/null || true)
+	if [ -z "${resolved}" ]; then
+		error "Cannot resolve path: ${source_file}"
+		return 1
+	fi
+	source_file="${resolved}"
+
+	if [[ "${source_file}" != "${HOME}"/* ]]; then
+		warn "File is outside HOME directory, this might cause issues"
+	fi
+
 	[ -z "${package_name}" ] && package_name="home"
 
 	local package_dir="${DOTFILES_DIR}/${package_name}"

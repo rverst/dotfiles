@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 #
 # Bootstrap a new machine:
-# - Ensure zsh is installed (strict dependency)
-# - Optionally set zsh as the default shell (opt-in)
-#!/usr/bin/env bash
-#
-# Bootstrap a new machine:
 # - Ensure zsh, stow, and age are installed (strict dependencies)
 # - Optionally set zsh as the default shell (opt-in)
-# - For macOS, install via Homebrew; if Homebrew is missing, prompt to install it
+# - Use homebrew on macOS or if available, native package manager on Linux as fallback
+# - For macOS, if Homebrew is missing, prompt to install it
 # - Run dotfiles installer under bash
 set -o errexit
 set -o nounset
@@ -21,6 +17,13 @@ __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
 SET_ZSH_DEFAULT=0
 UNATTENDED=0
+
+install_dependencies() {
+	#			cmd   linux-package   brew-formula
+	ensure_cmd "zsh" "zsh" "zsh"
+	ensure_cmd "stow" "stow" "stow"
+	ensure_cmd "age" "age" "age"
+}
 
 usage() {
 	echo "Usage: ${__base} [--set-default-zsh] [--unattended]"
@@ -112,6 +115,9 @@ install_linux_pkgs() {
 	# shellcheck disable=SC1091
 	. /etc/os-release
 	case "${ID}" in
+	alpine)
+		${SUDO} apk add --no-cache "$@"
+		;;
 	debian | ubuntu)
 		${SUDO} apt-get update -y
 		${SUDO} apt-get install -y "$@"
@@ -143,6 +149,11 @@ ensure_cmd() {
 		return 0
 	fi
 
+	# if brew is already installed, use it directly, regardless of OS (linuxbrew)
+	if command -v "brew" >/dev/null 2>&1; then
+		install_brew_pkg_if_missing "${brew_pkg}"
+	fi
+
 	local os
 	os=$(uname -s)
 	if [ "${os}" = "Darwin" ]; then
@@ -160,12 +171,6 @@ ensure_cmd() {
 		echo "Failed to install '${cmd}'. Please install it manually and re-run."
 		exit 1
 	fi
-}
-
-install_dependencies() {
-	ensure_cmd "zsh" "zsh" "zsh"
-	ensure_cmd "stow" "stow" "stow"
-	ensure_cmd "age" "age" "age"
 }
 
 maybe_set_default_shell_to_zsh() {

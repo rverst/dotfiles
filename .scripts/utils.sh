@@ -2,8 +2,29 @@
 
 # Various helper functions, sourced by main script.
 
+resolve_path() {
+	local path="$1"
+	if command -v realpath >/dev/null 2>&1; then
+		realpath "$path" 2>/dev/null && return 0
+	fi
+	if command -v readlink >/dev/null 2>&1; then
+		readlink -f "$path" 2>/dev/null && return 0
+	fi
+	if command -v python3 >/dev/null 2>&1; then
+		python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$path" && return 0
+	fi
+	if command -v python >/dev/null 2>&1; then
+		python -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$path" && return 0
+	fi
+	if command -v perl >/dev/null 2>&1; then
+		perl -MCwd=realpath -e 'print realpath($ARGV[0])' "$path" && return 0
+	fi
+	# Best-effort fallback
+	(cd "$(dirname "$path")" 2>/dev/null && printf "%s/%s\n" "$PWD" "$(basename "$path")") || echo "$path"
+}
+
 setup_gitconfig() {
-	if [ -z "$(git config --global --include --get user.email 2>/dev/null || true)" ]; then
+	if [ -z "$(git config --global --get user.email 2>/dev/null || true)" ]; then
 		info "Setting up ~/.gitconfig.local"
 		local local_config="$HOME/.gitconfig.local"
 

@@ -48,7 +48,7 @@ age_init() {
 
 age_can_decrypt_existing() {
 	local test_file
-	test_file=$(find "${DOTFILES_DIR}/flavours" -type f -name "*.age" -print -quit 2>/dev/null || true)
+	test_file=$(find "${DOTFILES_DIR}/flavours" -type f -name "*.age" 2>/dev/null | head -n 1 || true)
 	if [ -n "${test_file}" ]; then
 		age -d -i "${AGE_KEYS_FILE}" "${test_file}" >/dev/null 2>&1
 		return $?
@@ -88,7 +88,7 @@ age_reencrypt_all() {
 	temp_dir=$(mktemp -d)
 	local reencrypted=0
 
-	trap 'rm -rf -- "${temp_dir}"' EXIT
+	trap " [ -n '${temp_dir}' ] && [ -d '${temp_dir}' ] && rm -rf '${temp_dir}' " EXIT INT TERM
 
 	local flavour
 	while IFS= read -r flavour; do
@@ -111,7 +111,7 @@ age_reencrypt_all() {
 				error "  ✗ Failed to decrypt ${relative_path}"
 			fi
 		done < <(find "${flavour_dir}/${flavour}" -type f -name '*.age' -print0 2>/dev/null)
-	done < <(find "${flavour_dir}" -mindepth 1 -maxdepth 1 -type d ! -name 'decrypted-*' -printf '%f\n' 2>/dev/null)
+	done < <(find "${flavour_dir}" -mindepth 1 -maxdepth 1 -type d ! -name 'decrypted-*' -exec basename {} \; 2>/dev/null)
 
 	success "Re-encrypted ${reencrypted} files"
 }

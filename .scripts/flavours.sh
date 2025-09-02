@@ -3,16 +3,20 @@
 DOTCONFIG_FILE="${HOME}/.dotconfig"
 
 flavour_get_current() {
+	local result_var="${1:-}"
+	local flavour=""
 	if [ -f "${DOTCONFIG_FILE}" ]; then
-		local flavour
-		flavour=$(git config -f "${DOTCONFIG_FILE}" core.flavour 2>/dev/null || true)
-		if [ -n "${flavour}" ]; then
-			echo "${flavour}"
-			return 0
-		fi
+		flavour=$(git config -f "${DOTCONFIG_FILE}" --get core.flavour 2>/dev/null || true)
 	fi
-
-	flavour_prompt_selection
+	if [ -z "${flavour}" ]; then
+		flavour="$(flavour_prompt_selection)"
+		[ -n "${flavour}" ] || return 1
+	fi
+	if [ -n "${result_var}" ]; then
+		printf -v "${result_var}" "%s" "${flavour}"
+	else
+		echo "${flavour}"
+	fi
 }
 
 flavour_prompt_selection() {
@@ -21,22 +25,29 @@ flavour_prompt_selection() {
 		return 0
 	fi
 
-	local available_flavours=()
-	local standard_flavours=("work" "personal" "server")
+	local -a available_flavours=("personal" "work" "server")
+	local -a standard_flavours=()
 
 	while IFS= read -r flavour; do
 		[ -n "${flavour}" ] && available_flavours+=("${flavour}")
 	done < <(flavour_list_available)
 
-	for std_flavour in "${standard_flavours[@]}"; do
-		if [[ ! " ${available_flavours[*]} " =~ " ${std_flavour} " ]]; then
-			available_flavours+=("${std_flavour}")
-		fi
+	local flavour existing
+	for flavour in "${standard_flavours[@]}"; do
+		local found=0
+		for existing in "${available_flavours[@]}"; do
+			if [ "${existing}" = "${flavour}" ]; then
+				found=1
+				break
+			fi
+		done
+		[ "${found}" -eq 0 ] && available_flavours+=("${flavour}")
 	done
 
 	echo "" >&2
 	info "No flavour configured. Please select a flavour:" >&2
 	echo "" >&2
+
 	local j=1
 	for flavour in "${available_flavours[@]}"; do
 		echo "  ${j}) ${flavour}" >&2
@@ -48,34 +59,21 @@ flavour_prompt_selection() {
 	while true; do
 		local choice
 		user_read "Select flavour (1-${#available_flavours[@]}, 'c' for custom)" "" choice
-
 		if [ "${choice}" = "c" ]; then
 			local new_flavour
 			user_read "Enter new flavour name" "" new_flavour
 			if [[ "${new_flavour}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-				flavour_set_current "${new_flavour}"
 				echo "${new_flavour}"
 				return 0
 			else
 				warn "Invalid flavour name. Use only letters, numbers, hyphens and underscores." >&2
-				continue
 			fi
 		elif [[ "${choice}" =~ ^[0-9]+$ ]] && [ "${choice}" -ge 1 ] && [ "${choice}" -le "${#available_flavours[@]}" ]; then
 			local idx=$((choice - 1))
-			local selected_flavour="${available_flavours[$idx]}"
-			flavour_set_current "${selected_flavour}"
-			echo "${selected_flavour}"
+			echo "${available_flavours[$idx]}"
 			return 0
 		else
 			warn "Invalid selection. Please try again." >&2
-			echo "" >&2
-			local j=1
-			for flavour in "${available_flavours[@]}"; do
-				echo "  ${j}) ${flavour}" >&2
-				((j++))
-			done
-			echo "  c) Create new flavour" >&2
-			echo "" >&2
 		fi
 	done
 }
@@ -92,14 +90,13 @@ flavour_set_current() {
 flavour_list_available() {
 	local flavours_dir="${DOTFILES_DIR}/flavours"
 	[ -d "${flavours_dir}" ] || return 0
-
-	find "${flavours_dir}" -mindepth 1 -maxdepth 1 -type d ! -name 'decrypted-*' -printf '%f\n' 2>/dev/null | sort || true
+	find "${flavours_dir}" -mindepth 1 -type d -prune ! -name 'decrypted-*' -exec basename {} \; 2>/dev/null | sort || true
 }
 
 flavour_add_file() {
 	local source_file="$1"
 	local current_flavour
-	current_flavour=$(flavour_get_current)
+	flavour_get_current current_flavour
 	local flavour_dir="${DOTFILES_DIR}/flavours/${current_flavour}"
 
 	if [ ! -f "${source_file}" ]; then
@@ -114,7 +111,7 @@ flavour_add_file() {
 	if [[ "${filename}" == .* ]]; then
 		stow_filename="dot-${filename#.}"
 	else
-		stow_filename="dot-${filename}"
+		stow_filename="${filename}"
 	fi
 
 	local target_file="${flavour_dir}/${stow_filename}"
@@ -223,9 +220,6 @@ EOF
 	echo "${decrypted_dir}"
 }
 
-# Make cleanup a no-op (keep for compatibility if referenced)
-flavour_cleanup_stow() { :; }
-
 flavour_cleanup_stow() {
 	local flavour="$1"
 	local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${flavour}"
@@ -236,7 +230,7 @@ flavour_cleanup_stow() {
 
 flavour_encrypt_changes() {
 	local current_flavour
-	current_flavour=$(flavour_get_current)
+	flavour_get_current current_flavour
 	local flavour_dir="${DOTFILES_DIR}/flavours/${current_flavour}"
 	local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${current_flavour}"
 

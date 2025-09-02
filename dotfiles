@@ -16,7 +16,7 @@ DOT_UNA=
 DOTFILES_BRANCH=main
 DOTFILES_DIR="${__dir}"
 # Top-level packages (excluding hidden dirs and flavours)
-PACKAGES="$(find "${DOTFILES_DIR}" -mindepth 1 -maxdepth 1 -type d ! -name '.*' ! -name 'flavours' -print 2>/dev/null)"
+PACKAGES="$(find "${DOTFILES_DIR}" -mindepth 1 -type d -prune ! -name '.*' ! -name 'flavours' -print 2>/dev/null)"
 
 usage() {
 	echo "Dotfiles installer"
@@ -74,7 +74,7 @@ check_dependencies() {
 stow_packages() {
 	local flags=""
 	local current_flavour
-	current_flavour=$(flavour_get_current)
+	flavour_get_current current_flavour
 	local flavour_stow_dir=""
 
 	if [ -n "${DOT_DRY:-}" ]; then
@@ -198,7 +198,7 @@ do_add() {
 		exit 1
 	fi
 
-	source_file=$(realpath "${source_file}" 2>/dev/null || echo "${source_file}")
+	source_file=$(resolve_path "${source_file}" 2>/dev/null || echo "${source_file}")
 
 	case "${add_type}" in
 	"flavour")
