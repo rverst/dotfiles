@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+#
+# Template to create a tmux session. The template is sourced
+# by the `tm`-function in ~/.config/zsf/functions/
+# and the function `create_session` is called
+
+function create_session() {
+	local session=${1}
+	local base_dir="$HOME/Dev/fiege-digital/cargo-coders/projects/csc/adapter"
+	local count=1
+
+	tmux new-session -d -s "$session" -c "$base_dir"
+	tmux rename-window -t "$session:$count" "csc-adapter"
+	count=$((count + 1))
+
+	local adapters=$(find "$base_dir/" -maxdepth 1 -mindepth 1 -type d -not -name ".idea" | sort)
+	for adapter in ${(f)adapters}; do
+		local window=$(basename "$adapter")
+		local dir="$base_dir/$window"
+
+		tmux new-window -t "$session:$count" -n "$window" -c "$dir"
+		count=$((count + 1))
+	done
+}
