@@ -34,6 +34,9 @@ alias cp="cp -iv"
 alias mv="mv -iv"
 alias mkd="mkdir -pv"
 
+alias ts="tmux-sessionizer"
+alias tms="tmux-sessionizer"
+
 if [ "$(uname -s)" = "Linux" ]; then
 	alias rm="rm -vI"
 elif [ "$(uname -s)" = "Darwin" ]; then
