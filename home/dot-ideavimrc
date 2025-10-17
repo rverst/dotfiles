@@ -40,6 +40,7 @@ map <leader>R <Action>(RefactoringMenu)
 map <leader>b <Action>(GotoDeclaration)
 map <leader>c <Action>(CommentByLineComment)
 map <leader>C <Action>(CommentByBlockComment)
+map <leader>l <Action>(TUILauncher.LazyGit)
 
 map W w<CR>
 

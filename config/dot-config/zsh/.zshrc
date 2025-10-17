@@ -87,12 +87,11 @@ HISTSIZE=9001
 HISTFILE="$ZDOTDIR/.zsh_history"
 SAVEHIST=$HISTSIZE
 HISTDUP=erase
-setopt appendhistory
-setopt sharehistory
+setopt inc_append_history
 setopt hist_ignore_space
 setopt hist_ignore_all_dups
-setopt hist_save_no_dups
 setopt hist_ignore_dups
+setopt hist_save_no_dups
 
 # completion styling (case insensitive completion and colors)
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
@@ -137,3 +136,7 @@ if [ "$TERM_PROGRAM" != "Apple_Terminal" ]; then
   eval "$(oh-my-posh init zsh --config $XDG_CONFIG_HOME/oh-my-posh/mytheme.omp.yaml)"
 fi
 
+# direnv integration
+if [ ! -z $(command -v direnv) ]; then
+  eval "$(direnv hook zsh)"
+fi
