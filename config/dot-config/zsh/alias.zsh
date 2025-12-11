@@ -20,6 +20,7 @@ alias dev="cd $XDG_CODE_HOME"
 
 alias lg="lazygit"
 alias ldock="lazydocker"
+alias oc="opencode"
 
 # quick access to #EDITOR
 alias e="$EDITOR"
