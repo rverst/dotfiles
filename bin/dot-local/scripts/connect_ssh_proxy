@@ -1,0 +1,76 @@
+#!/usr/bin/env zsh
+
+set -e
+
+privoxy_bin="/opt/homebrew/opt/privoxy/sbin/privoxy"
+
+cmd=${1:-start}
+env=$2
+
+ssh_keys=(test uat prod)
+ssh_values=("test" "uat" "prod")
+
+privoxy_config_keys=(test uat prod)
+privoxy_config_values=(
+    "$HOME/.config/privoxy/test/config"
+    "$HOME/.config/privoxy/uat/config"
+    "$HOME/.config/privoxy/prod/config"
+)
+
+privoxy_log_dir="$HOME/.local/share/privoxy"
+privoxy_log_keys=(test uat prod)
+privoxy_log_values=(
+    "${privoxy_log_dir}/logfile_test.log"
+    "${privoxy_log_dir}/logfile_uat.log"
+    "${privoxy_log_dir}/logfile_prod.log"
+)
+
+get_value() {
+  local key=$1
+  local -a keys=("${(@P)2}")
+  local -a values=("${(@P)3}")
+  for i in {1..${#keys}}; do
+    if [[ "${keys[$i]}" == "$key" ]]; then
+      echo "${values[$i]}"
+      return
+    fi
+  done
+  echo ""
+}
+
+ssh_target=$(get_value "$env" ssh_keys ssh_values)
+privoxy_config=$(get_value "$env" privoxy_config_keys privoxy_config_values)
+privoxy_logfile=$(get_value "$env" privoxy_log_keys privoxy_log_values)
+
+if [[ -z "$ssh_target" ]]; then
+  echo "Invalid environment. Use: test, uat, or prod."
+  exit 1
+fi
+
+if [[ "$cmd" == "stop" ]]; then
+  echo "Stopping SSH tunnel for $ssh_target ..."
+  pkill -f "ssh $ssh_target -f -N"
+
+  echo "Stopping Privoxy for ${env}..."
+  privoxy_pid=$(pgrep -f "$privoxy_config}")
+  if [[ -n "${privoxy_pid}" ]]; then
+    kill "${privoxy_pid}"
+    echo "Privoxy stopped for ${env}."
+  else
+    echo "No Privoxy instance found for ${env}."
+  fi
+else
+  if [[ ! -d "$privoxy_log_dir" ]]; then
+    mkdir -p "$privoxy_log_dir"
+  fi
+
+  if [[ -f "$privoxy_logfile" ]]; then
+    rm "$privoxy_logfile"
+  fi
+
+  echo "Starting SSH tunnel to $ssh_target..."
+  ssh "$ssh_target" -f -N
+
+  echo "Starting Privoxy proxy ($privoxy_config)"
+  "$privoxy_bin" "$privoxy_config" &
+fi

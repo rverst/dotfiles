@@ -13,8 +13,8 @@ gui:
       - '⣽'
       - '⣾'
 git:
-  paging:
-    pager: 'diff-so-fancy'
+  pagers:
+    - pager: 'diff-so-fancy'
   mainBranches:
     - 'master'
     - 'main'
