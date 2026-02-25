@@ -1,0 +1,59 @@
+# ~/.config/tmux/projects.yaml
+# Configuration for the `tm` session manager.
+#
+# substitutions:
+#   Applied to the full absolute path when deriving a session name.
+#   The session name is "<parent>/<basename>" of the resolved directory,
+#   after substitutions are applied to the path segments.
+#
+# windows:
+#   Predefined windows created for every new session.
+#   - name: window name
+#     command: (optional) command to run in the window on creation
+#
+# sources:
+#   List of directory sources to populate the project picker.
+#   - path: root directory (~ is expanded)
+#     mode: how to discover entries
+#       git   - walk subdirs recursively; include a dir when it contains .git,
+#               stop recursing into it. Dirs without .git are traversed further.
+#       dirs  - include all immediate subdirectories (depth 1)
+#       depth - include all subdirs up to the given depth (requires `depth: n`)
+#       none  - include the path itself as a single entry
+#     depth: n  (only used with mode: depth) — max recursion depth, default 1
+#     exclude: (optional) list of directory basenames to skip at any depth
+
+substitutions:
+  fiege-digital/cargo-coders: "cc"
+  robverst: "~"
+
+windows:
+  - name: default
+  - name: nvim
+  - name: copilot
+
+sources:
+  - path: ~/Dev/fiege-digital/cargo-coders/projects
+    mode: git
+    exclude:
+      - .idea
+      - src
+      - tests
+
+  - path: ~/Dev/fiege-digital/cargo-coders/infrastructure
+    mode: git
+    exclude:
+      - .idea
+
+  - path: ~/Dev/fiege-digital/cargo-coders/libraries
+    mode: git
+    exclude:
+      - .idea
+
+  - path: ~/Dev/fiege-digital/cargo-coders/tooling
+    mode: git
+    exclude:
+      - .idea
+
+  - path: ~/.dotfiles
+    mode: none

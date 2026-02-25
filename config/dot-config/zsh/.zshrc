@@ -15,6 +15,7 @@ export FZF_DEFAULT_OPTS='--bind ctrl-a:accept --height 40% --tmux 80%'
 export LC_CTYPE=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export COMPOSE_MENU=false
+export RBENV_ROOT="${ZDG_DATA_HOME:-${HOME}/.local/share}/rbenv"
 
 #vi mode
 bindkey -v
@@ -102,7 +103,7 @@ zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color $realpath'
 
 # functions
 fpath=(~/.config/zsh/functions $fpath)
-autoload -U bip bup fif fia tm git_is_clean batch_exec batch_exec_parallel
+autoload -U bip bup fif fia tm tms git_is_clean batch_exec batch_exec_parallel
 
 # aliases
 source "$ZDOTDIR/alias.zsh"
@@ -141,3 +142,7 @@ if [ ! -z $(command -v direnv) ]; then
   eval "$(direnv hook zsh)"
 fi
 
+# rbenv
+if [ ! -z $(command -v rbenv) ]; then
+  eval "$(rbenv init - --no-rehash zsh)"
+fi

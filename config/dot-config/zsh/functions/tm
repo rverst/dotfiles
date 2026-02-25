@@ -1,50 +1,294 @@
 #!/usr/bin/env zsh
-# Create a new tmux session or attach to an existing one
+# Directory-based tmux session manager
 #
 # Usage:
-# `tm` - will allow you to select a tmux session to attach to or create a new one based
-#        on a template in ~/.config/tmux/sessions.
+#   tm           - open fzf picker: running sessions (switch) + discovered project dirs (new session)
+#   tm <session> - attach/switch to a running session by name, or create a bare one
 #
-# `tm <session-name>` - will attach to the specified tmux session if it exists or create it.
-#
+# Configuration: ~/.config/tmux/projects.yaml
 
-SESSION_TEMPLATE_DIR="$HOME/.config/tmux/sessions"
+TM_CONFIG="${TM_CONFIG:-$HOME/.config/tmux/projects.yaml}"
 
-[[ -n "$TMUX" ]] && change="switch-client" || change="attach-session"
+# Config is read ONCE into these arrays at startup (see _tm_load_config below):
+#   _tm_subs    — "from\tto" pairs for session name substitutions
+#   _tm_windows — "name\tcommand" pairs for windows to create per session
+#   _tm_sources — "path\tmode\tdepth\texcludes" per source entry
+typeset -ga _tm_subs _tm_windows _tm_sources
 
-if [ $1 ]; then
-  tmux $change -t "$1" 2>/dev/null || (tmux new-session -d -s $1 && tmux $change -t "$1")
+# Used as a return-by-reference to avoid subshell forks in hot paths.
+typeset -g _tm_name_result
+
+# ── config ───────────────────────────────────────────────────────────────────
+
+# Read the entire config in a single yq call and populate the arrays above.
+_tm_load_config() {
+  _tm_subs=()
+  _tm_windows=()
+  _tm_sources=()
+  local tag f1 f2 f3 f4
+  while IFS=$'\t' read -r tag f1 f2 f3 f4; do
+    case "$tag" in
+      SUB) _tm_subs+=("${f1}	${f2}") ;;
+      WIN) _tm_windows+=("${f1}	${f2}") ;;
+      SRC) _tm_sources+=("${f1}	${f2}	${f3}	${f4}") ;;
+    esac
+  done < <(yq e '
+    (.substitutions | to_entries | .[] | "SUB\t" + .key + "\t" + .value),
+    (.windows | .[] | "WIN\t" + .name + "\t" + (.command // "")),
+    (.sources | .[] |
+      "SRC\t" + .path + "\t" + .mode + "\t" +
+      (.depth // 1 | tostring) + "\t" +
+      (.exclude // [] | join(" ")))
+  ' "$TM_CONFIG")
+}
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+# Apply substitutions to $1, writing result into $_tm_name_result.
+# Pure zsh — no subshell, no yq call.
+_tm_apply_subs_inline() {
+  _tm_name_result="$1"
+  local pair from to
+  for pair in "${_tm_subs[@]}"; do
+    from="${pair%%	*}"
+    to="${pair##*	}"
+    _tm_name_result="${_tm_name_result//$from/$to}"
+  done
+}
+
+# Recursively collect git-project directories under $1.
+# Stops recursing into a directory once it contains .git.
+# Excludes directory basenames listed in $2 (space-separated).
+_tm_walk_git() {
+  local root="$1"
+  local -a excl=("${(@s: :)2}") queue=("$root")
+  local current entry clean name skip ex
+  while (( ${#queue} > 0 )); do
+    current="${queue[1]}"
+    queue=("${queue[@]:1}")
+    for entry in "$current"/*/(N/); do
+      clean="${entry%/}"
+      name="${clean:t}"
+      skip=0
+      for ex in "${excl[@]}"; do [[ "$name" == "$ex" ]] && skip=1 && break; done
+      (( skip )) && continue
+      if [[ -d "${clean}/.git" ]]; then
+        print -r -- "$clean"
+      else
+        queue+=("$clean")
+      fi
+    done
+  done
+}
+
+# Collect immediate subdirectories under $1, excluding basenames in $2.
+_tm_walk_dirs() {
+  local root="$1"
+  local -a excl=("${(@s: :)2}")
+  local entry clean name skip ex
+  for entry in "$root"/*/(N/); do
+    clean="${entry%/}"
+    name="${clean:t}"
+    skip=0
+    for ex in "${excl[@]}"; do [[ "$name" == "$ex" ]] && skip=1 && break; done
+    (( skip )) && continue
+    print -r -- "$clean"
+  done
+}
+
+# Collect subdirectories up to depth $3 under $1, excluding basenames in $2.
+_tm_walk_depth() {
+  local root="$1"
+  local -a excl=("${(@s: :)2}")
+  local max_depth="$3"
+  # queue entries: "path\tdepth"
+  local -a queue=("${root}	0")
+  local item current depth entry clean name skip ex next_depth
+  while (( ${#queue} > 0 )); do
+    item="${queue[1]}"
+    queue=("${queue[@]:1}")
+    current="${item%%	*}"
+    depth="${item##*	}"
+    (( depth >= max_depth )) && continue
+    for entry in "$current"/*/(N/); do
+      clean="${entry%/}"
+      name="${clean:t}"
+      skip=0
+      for ex in "${excl[@]}"; do [[ "$name" == "$ex" ]] && skip=1 && break; done
+      (( skip )) && continue
+      next_depth=$(( depth + 1 ))
+      print -r -- "$clean"
+      queue+=("${clean}	${next_depth}")
+    done
+  done
+}
+
+# Discover all project directories and output "display_name\tpath" lines.
+# Uses _tm_sources (populated by _tm_load_config) — zero extra yq calls.
+_tm_discover() {
+  local src raw_path mode depth excludes src_path dir
+  local -a dirs
+  for src in "${_tm_sources[@]}"; do
+    raw_path="${src%%	*}";  src="${src#*	}"
+    mode="${src%%	*}";      src="${src#*	}"
+    depth="${src%%	*}";     excludes="${src#*	}"
+
+    src_path="${raw_path/#\~/$HOME}"
+    [[ -d "$src_path" ]] || continue
+
+    dirs=()
+    case "$mode" in
+      git)
+        while IFS= read -r d; do dirs+=("$d"); done < <(_tm_walk_git "$src_path" "$excludes")
+        ;;
+      dirs)
+        while IFS= read -r d; do dirs+=("$d"); done < <(_tm_walk_dirs "$src_path" "$excludes")
+        ;;
+      none)
+        dirs=("$src_path")
+        ;;
+      depth)
+        while IFS= read -r d; do dirs+=("$d"); done < <(_tm_walk_depth "$src_path" "$excludes" "$depth")
+        ;;
+    esac
+
+    for dir in "${dirs[@]}"; do
+      # Inline display name: parent/basename with substitutions — no subshell
+      _tm_apply_subs_inline "${dir:h:t}/${dir:t}"
+      printf '%s\t%s\n' "$_tm_name_result" "$dir"
+    done
+  done
+}
+
+# Create a new session for the given directory using _tm_windows config.
+_tm_create_session() {
+  local session="$1" dir="$2"
+  local win_name win_cmd
+  local w=1
+
+  # First window is created with new-session
+  win_name="${_tm_windows[1]%%	*}"
+  win_cmd="${_tm_windows[1]#*	}"
+  tmux new-session -d -s "$session" -c "$dir" -n "$win_name"
+  [[ -n "$win_cmd" ]] && tmux send-keys -t "${session}:1" "$win_cmd" Enter
+
+  # Remaining windows
+  for (( w=2; w<=${#_tm_windows}; w++ )); do
+    win_name="${_tm_windows[$w]%%	*}"
+    win_cmd="${_tm_windows[$w]#*	}"
+    tmux new-window -t "${session}:${w}" -n "$win_name" -c "$dir"
+    [[ -n "$win_cmd" ]] && tmux send-keys -t "${session}:${w}" "$win_cmd" Enter
+  done
+
+  tmux select-window -t "${session}:1"
+}
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+[[ -n "$TMUX" ]] && _tm_change="switch-client" || _tm_change="attach-session"
+
+# Direct argument: either a session name or a directory path
+if [[ -n "$1" ]]; then
+  local arg="${1/#\~/$HOME}"
+
+  if [[ -d "$arg" ]]; then
+    # It's a directory — load config and create a proper session
+    _tm_load_config
+    _tm_apply_subs_inline "${arg:h:t}/${arg:t}"
+    local session_name="$_tm_name_result"
+    session_name="${session_name//\//-}"
+    session_name="${session_name//\~/-}"
+    session_name="${session_name// /-}"
+    session_name="${session_name//./-}"
+    while [[ "$session_name" == *--* ]]; do session_name="${session_name//--/-}"; done
+    session_name="${session_name#-}"
+    session_name="${session_name%-}"
+    if tmux has-session -t "$session_name" 2>/dev/null; then
+      tmux "$_tm_change" -t "$session_name"
+    else
+      _tm_create_session "$session_name" "$arg"
+      tmux "$_tm_change" -t "$session_name"
+    fi
+  else
+    # It's a session name — attach or create a bare session
+    tmux "$_tm_change" -t "$1" 2>/dev/null \
+      || (tmux new-session -d -s "$1" && tmux "$_tm_change" -t "$1")
+  fi
   return
 fi
 
-running=$(tmux list-sessions -F "#{session_name}" 2>/dev/null)
-templates=$(find "$SESSION_TEMPLATE_DIR/" -type f -exec basename {} \;)
+# Load config once — single yq call
+_tm_load_config
 
-combined=()
+# Collect entries as tab-separated "name\tpath\tkind" triples.
+# kind: "running" for existing sessions, "new" for discovered dirs.
+local -a entries=()
+local line
 
-for session in ${(f)running}; do
-  combined+=("$session (attach)")
-done
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  entries+=("${line}	running")
+done < <(tmux list-sessions -F "#{session_name}	#{session_path}" 2>/dev/null)
 
-for template in ${(f)templates}; do
-  if [[ ${running[(Ie)$template]} ]]; then
-    combined+=("$template (new-session)")
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  entries+=("${line}	new")
+done < <(_tm_discover)
+
+# Format for fzf — three tab-separated columns:
+#   col 1 (hidden): index for lookup after selection
+#   col 2:          fixed-width name + running indicator aligned
+#   col 3 (hidden): path — shown in preview bar at the top
+local -a display_lines=()
+local entry ename epath ekind rest
+for (( i=1; i<=${#entries}; i++ )); do
+  entry="${entries[$i]}"
+  ename="${entry%%	*}";  rest="${entry#*	}"
+  epath="${rest%%	*}";   ekind="${rest##*	}"
+  if [[ "$ekind" == "running" ]]; then
+    display_lines+=("$(printf '%d\t%-40s  \033[32m(running)\033[0m\t%s' "$i" "$ename" "$epath")")
+  else
+    display_lines+=("$(printf '%d\t%-40s\t%s' "$i" "$ename" "$epath")")
   fi
 done
 
-selection=$(printf '%s\n' "${combined[@]}" | fzf)
+local selection
+selection=$(printf '%s\n' "${display_lines[@]}" \
+  | fzf --ansi --no-sort \
+        --delimiter=$'\t' \
+        --with-nth='2' \
+        --nth='1' \
+        --preview='echo {3}' \
+        --preview-window='up:1:nowrap' \
+        --prompt='session> ' \
+        --header='enter: open  |  ctrl-c: cancel')
 
-if [[ -z $selection ]]; then
-  return
-fi
+[[ -z "$selection" ]] && return
 
-if [[ $selection == *"(attach)" ]]; then
-  session=$(echo $selection | awk '{print $1}')
-  tmux $change -t "$session"
+# Look up the selected entry by its embedded index
+local sel_idx="${selection%%	*}"
+local sel_entry="${entries[$sel_idx]}"
+local sel_name sel_path sel_kind sel_rest
+sel_name="${sel_entry%%	*}";  sel_rest="${sel_entry#*	}"
+sel_path="${sel_rest%%	*}";   sel_kind="${sel_rest##*	}"
+
+if [[ "$sel_kind" == "running" ]]; then
+  tmux "$_tm_change" -t "$sel_name"
 else
-  session=$(echo $selection | awk '{print $1}')
-  source "$SESSION_TEMPLATE_DIR/$session"
-  create_session "$session"
-  tmux $change -t "$session:1"
-fi
+  # Sanitize: replace /, ~, spaces, and dots with -; collapse and strip edge dashes
+  local session_name="${sel_name//\//-}"
+  session_name="${session_name//\~/-}"
+  session_name="${session_name// /-}"
+  session_name="${session_name//./-}"
+  # Collapse consecutive dashes, then strip leading/trailing dashes
+  while [[ "$session_name" == *--* ]]; do session_name="${session_name//--/-}"; done
+  session_name="${session_name#-}"
+  session_name="${session_name%-}"
 
+  if tmux has-session -t "$session_name" 2>/dev/null; then
+    tmux "$_tm_change" -t "$session_name"
+  else
+    _tm_create_session "$session_name" "$sel_path"
+    tmux "$_tm_change" -t "$session_name"
+  fi
+fi
