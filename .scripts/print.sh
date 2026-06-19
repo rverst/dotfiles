@@ -9,28 +9,37 @@ _warn_prefix="\r\033[2K[ \033[0;31m!!\033[0m ] "
 _error_prefix="\r\033[2K[ \033[0;31mEE\033[0m ] "
 _fail_prefix="\r\033[2K[ \033[0;31mXX\033[0m ] "
 
+# Note: these must always return success. They are called from scripts running
+# under `set -o errexit`; a short-circuited `[ -z ... ] && printf` would return
+# non-zero in silent mode and abort the caller.
 info() {
-	[ -z "${DOT_SIL:-}" ] && printf "%b%s\n" "${_info_prefix}" "${1}"
+	[ -n "${DOT_SIL:-}" ] && return 0
+	printf "%b%s\n" "${_info_prefix}" "${1}"
 }
 
 skip() {
-	[ -z "${DOT_SIL:-}" ] && printf "%b%s\n" "${_skip_prefix}" "${1}"
+	[ -n "${DOT_SIL:-}" ] && return 0
+	printf "%b%s\n" "${_skip_prefix}" "${1}"
 }
 
 user() {
-	[ -z "${DOT_SIL:-}" ] && printf "%b%s\n" "${_user_prefix}" "${1}"
+	[ -n "${DOT_SIL:-}" ] && return 0
+	printf "%b%s\n" "${_user_prefix}" "${1}"
 }
 
 success() {
-	[ -z "${DOT_SIL:-}" ] && printf "%b%s\n" "${_success_prefix}" "${1}"
+	[ -n "${DOT_SIL:-}" ] && return 0
+	printf "%b%s\n" "${_success_prefix}" "${1}"
 }
 
 warn() {
-	[ -z "${DOT_SIL:-}" ] && printf "%b%s\n" "${_warn_prefix}" "${1}"
+	[ -n "${DOT_SIL:-}" ] && return 0
+	printf "%b%s\n" "${_warn_prefix}" "${1}"
 }
 
 error() {
-	[ -z "${DOT_SIL:-}" ] && printf "%b%s\n" "${_error_prefix}" "${1}"
+	[ -n "${DOT_SIL:-}" ] && return 0
+	printf "%b%s\n" "${_error_prefix}" "${1}"
 }
 
 fail() {

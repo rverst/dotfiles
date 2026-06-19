@@ -78,8 +78,9 @@ Temporary Items
 # .dotfiles specific ignores                       #
 #--------------------------------------------------#
 
-# age private key
+# age private keys
 .age/keys.txt
+.age/master-key.txt
 
 # decrypted files
 flavours/decrypted-*/

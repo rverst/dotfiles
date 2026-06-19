@@ -101,14 +101,9 @@ move_to_flavour() {
 	fi
 
 	# Drop the live link/file and the regular source so stow can relink from the
-	# flavour workspace on the next restow.
-	[ -L "${abs}" ] && rm -f "${abs}"
-	if [ -n "${src}" ]; then
-		rm -f "${src}"
-		rmdir -p "$(dirname "${src}")" 2>/dev/null || true
-	elif [ -f "${abs}" ]; then
-		rm -f "${abs}"
-	fi
+	# flavour workspace on the next restow (verify already passed in
+	# flavour_place_file; this asks before deleting unless unattended).
+	flavour_remove_original "${abs}" "${src}"
 
 	success "Moved to flavours/${target_flavour}/${stow_rel}${suffix}"
 	return 0
@@ -208,23 +203,29 @@ add_file_interactive() {
 		echo "  4) Add to regular package"
 		echo ""
 
+		local current_flavour
+		flavour_get_current current_flavour
+
 		while true; do
 			local choice
 			user_read "Select option (1-4)" "" choice
 			case "${choice}" in
 			1)
 				local DOT_FORCE_ENCRYPT=1
-				flavour_add_file "${source_file}"
+				flavour_add_file "${source_file}" "${current_flavour}" &&
+					_add_restow_if_active "${current_flavour}"
 				return $?
 				;;
 			2)
 				local DOT_FORCE_NO_ENCRYPT=1
-				flavour_add_file "${source_file}"
+				flavour_add_file "${source_file}" "${current_flavour}" &&
+					_add_restow_if_active "${current_flavour}"
 				return $?
 				;;
 			3)
 				local DOT_FORCE_ENCRYPT=1
-				flavour_add_file "${source_file}" "common"
+				flavour_add_file "${source_file}" "common" &&
+					_add_restow_if_active "common"
 				return $?
 				;;
 			4)

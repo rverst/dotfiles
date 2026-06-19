@@ -116,6 +116,13 @@ flavour_place_file() {
 
 	if [ "${encrypt}" = "true" ]; then
 		age_encrypt_file "${content_file}" "${target}.age" || return 1
+		# Never trust an .age we cannot read back. If the round-trip fails,
+		# discard the bad ciphertext and do not touch the decrypted workspace.
+		if ! age_verify_roundtrip "${content_file}" "${target}.age"; then
+			error "Encrypted file failed decrypt verification: ${stow_rel}.age"
+			rm -f "${target}.age"
+			return 1
+		fi
 		[ -f "${target}" ] && rm -f "${target}"
 	else
 		cp "${content_file}" "${target}"
@@ -131,6 +138,35 @@ flavour_place_file() {
 	return 0
 }
 
+# flavour_remove_original <abs> <src>
+# Called after a file has been placed (and verified) into a flavour. Verify
+# already happened in flavour_place_file; here we ask (unless unattended) and
+# then remove the live file plus, if it was a stow symlink, its repo source, so
+# stow can relink from the flavour workspace. Returns 0 if removed, 1 if kept.
+flavour_remove_original() {
+	local abs="$1"
+	local src="${2:-}"
+
+	if [ -z "${DOT_UNA:-}" ]; then
+		echo ""
+		local ans
+		user_yesno "Remove original and link it from the flavour?" "y" ans
+		if [ "${ans}" -ne 1 ]; then
+			warn "Original kept; the file now also lives in the flavour (duplicate)."
+			return 1
+		fi
+	fi
+
+	[ -L "${abs}" ] && rm -f "${abs}"
+	if [ -n "${src}" ]; then
+		rm -f "${src}"
+		rmdir -p "$(dirname "${src}")" 2>/dev/null || true
+	elif [ -e "${abs}" ]; then
+		rm -f "${abs}"
+	fi
+	return 0
+}
+
 flavour_add_file() {
 	local source_file="$1"
 	local target_flavour="${2:-}"
@@ -141,10 +177,12 @@ flavour_add_file() {
 		return 1
 	fi
 
-	local abs rel src stow_rel
+	local abs="" rel="" src="" stow_rel under_home=0
 	if resolve_home_rel "${source_file}" abs rel src; then
 		stow_rel="$(home_to_stow_path "${rel}")"
+		under_home=1
 	else
+		warn "File is outside HOME; it will be added but not removed/relinked"
 		stow_rel="$(home_to_stow_path "$(basename "${source_file}")")"
 	fi
 
@@ -166,15 +204,34 @@ flavour_add_file() {
 		fi
 	fi
 
-	if flavour_place_file "${source_file}" "${target_flavour}" "${stow_rel}" "${should_encrypt}"; then
-		if [ "${should_encrypt}" = "true" ]; then
-			success "File encrypted and added as: flavours/${target_flavour}/${stow_rel}.age"
-		else
-			success "File added as: flavours/${target_flavour}/${stow_rel}"
-		fi
-	else
+	# Read contents from the repo source when the live path is a stow symlink,
+	# otherwise from the file itself.
+	local content="${source_file}"
+	[ "${under_home}" -eq 1 ] && [ -n "${src}" ] && content="${src}"
+
+	if [ -n "${DOT_DRY:-}" ]; then
+		local suffix=""
+		[ "${should_encrypt}" = "true" ] && suffix=".age"
+		info "DRY RUN: would create flavours/${target_flavour}/${stow_rel}${suffix}"
+		[ "${under_home}" -eq 1 ] && info "DRY RUN: would remove original ${rel} and relink"
+		return 0
+	fi
+
+	if ! flavour_place_file "${content}" "${target_flavour}" "${stow_rel}" "${should_encrypt}"; then
 		error "Failed to add file to flavour"
 		return 1
+	fi
+
+	if [ "${should_encrypt}" = "true" ]; then
+		success "File encrypted and added as: flavours/${target_flavour}/${stow_rel}.age"
+	else
+		success "File added as: flavours/${target_flavour}/${stow_rel}"
+	fi
+
+	# Adopt: drop the original so stow can relink from the flavour workspace.
+	# Only for files under HOME (a stowable target).
+	if [ "${under_home}" -eq 1 ]; then
+		flavour_remove_original "${abs}" "${src}"
 	fi
 
 	return 0

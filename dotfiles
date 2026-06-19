@@ -143,9 +143,45 @@ stow_packages() {
 	success "Done"
 }
 
+# install_git_hooks
+# Points git at the repo's tracked hooks so the pre-commit re-encrypt/verify hook
+# runs for everyone. Idempotent.
+install_git_hooks() {
+	local hooks_dir="${DOTFILES_DIR}/.githooks"
+	[ -d "${hooks_dir}" ] || return 0
+	[ -n "${DOT_DRY:-}" ] && {
+		info "DRY RUN: would set core.hooksPath to .githooks"
+		return 0
+	}
+	git -C "${DOTFILES_DIR}" config core.hooksPath .githooks
+	chmod +x "${hooks_dir}"/* 2>/dev/null || true
+	info "Git hooks enabled (core.hooksPath=.githooks)"
+}
+
+# _add_restow_if_active <target_flavour>
+# Restows so a freshly added flavour file goes live, but only when the target is
+# the active layer (current flavour or the always-applied 'common'). For other
+# flavours the file is applied on switch.
+_add_restow_if_active() {
+	local target="$1"
+	[ -n "${DOT_DRY:-}" ] && return 0
+	local current
+	flavour_get_current current
+	if [ "${target}" = "common" ] || [ "${target}" = "${current}" ]; then
+		info "Restowing..."
+		stow_packages -R
+	else
+		info "Added into '${target}'. It will be applied when you switch to that flavour."
+	fi
+}
+
 do_install() {
 	check_dependencies
-	age_init
+	# Tolerate a machine that cannot decrypt yet: age_init warns and returns
+	# non-zero, but install should still stow (encrypted files become
+	# placeholders until recovery). See flavour_prepare_stow.
+	age_init || true
+	install_git_hooks
 
 	info "Installing dotfiles with flavour: $(flavour_get_current)"
 	stow_packages -S
@@ -188,6 +224,7 @@ do_status() {
 
 	info "Current flavour: $(flavour_get_current)"
 
+	age_require_can_decrypt || exit 1
 	flavour_encrypt_changes
 
 	echo ""
@@ -244,6 +281,7 @@ do_flavour() {
 
 do_reencrypt_all() {
 	check_dependencies
+	age_require_can_decrypt || exit 1
 	age_reencrypt_all
 }
 
@@ -261,18 +299,25 @@ do_add() {
 	case "${add_type}" in
 	"flavour")
 		check_dependencies
+		age_require_can_decrypt || exit 1
 		# optional 3rd arg selects the target flavour (default: current)
-		flavour_add_file "${source_file}" "${package_name}"
+		local target_flavour="${package_name}"
+		[ -n "${target_flavour}" ] || flavour_get_current target_flavour
+		flavour_add_file "${source_file}" "${target_flavour}" &&
+			_add_restow_if_active "${target_flavour}"
 		;;
 	"common")
 		check_dependencies
-		flavour_add_file "${source_file}" "common"
+		age_require_can_decrypt || exit 1
+		flavour_add_file "${source_file}" "common" &&
+			_add_restow_if_active "common"
 		;;
 	"regular" | "package")
 		add_regular_file "${source_file}" "${package_name:-home}"
 		;;
 	"")
 		check_dependencies
+		age_require_can_decrypt || exit 1
 		add_file_interactive "${source_file}"
 		;;
 	*)
@@ -297,6 +342,7 @@ do_add() {
 
 do_move() {
 	check_dependencies
+	age_require_can_decrypt || exit 1
 
 	local file="${1:-}"
 	local target_flavour="${2:-}"
@@ -319,6 +365,7 @@ do_move() {
 
 do_copy() {
 	check_dependencies
+	age_require_can_decrypt || exit 1
 
 	local file="${1:-}"
 	local from_flavour="${2:-}"
