@@ -82,7 +82,7 @@ Temporary Items
 .age/keys.txt
 
 # decrypted files
-flavours/decrytped-*/
+flavours/decrypted-*/
 
 # homebrew lockfiles
 apps/Brewfile.lock.json
