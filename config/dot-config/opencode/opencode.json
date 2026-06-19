@@ -1,5 +1,15 @@
 {
-	"$schema": "https://opencode.ai/config.json",
-	"theme": "gruvbox",
-	"autoupdate": true
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": true,
+  "mcp": {
+    "home_assistant": {
+      "type": "local",
+      "command": ["uvx", "ha-mcp@latest"],
+      "enabled": true,
+      "environment": {
+        "HOMEASSISTANT_URL": "{env:HOMEASSISTANT_URL}",
+        "HOMEASSISTANT_TOKEN": "{env:HOMEASSISTANT_TOKEN}"
+      }
+    }
+  }
 }

@@ -146,3 +146,5 @@ fi
 if [ ! -z $(command -v rbenv) ]; then
   eval "$(rbenv init - --no-rehash zsh)"
 fi
+
+. "$HOME/.local/share/../bin/env"
