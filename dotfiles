@@ -12,6 +12,7 @@ __root="$(cd "$(dirname "${__dir}")" && pwd)"
 DOT_DRY=
 DOT_SIL=
 DOT_UNA=
+DOT_FORCE_NO_ENCRYPT=
 
 DOTFILES_BRANCH=main
 DOTFILES_DIR="${__dir}"
@@ -34,16 +35,33 @@ usage() {
 	echo "  flavour [name]   show current flavour or switch to specified flavour"
 	echo "  reencrypt-all    re-encrypt all files with current recipients"
 	echo ""
-	echo "  add <file> [flavour|regular] [package]"
-	echo "                 add existing file to dotfiles"
-	echo "                 flavour: add to current flavour (encrypted)"
-	echo "                 regular: add to regular package (default: home)"
-	echo "                 no type: interactive selection"
+	echo "  add <file> [flavour|common|regular] [flavour-name|package]"
+	echo "                   add existing file to dotfiles"
+	echo "                   flavour: add to a flavour (default: current; encrypted"
+	echo "                            by default; optional flavour-name arg)"
+	echo "                   common:  add to the shared 'common' layer (encrypted)"
+	echo "                   regular: add to regular package (default: home)"
+	echo "                   no type: interactive selection"
+	echo ""
+	echo "  move <file> [flavour]"
+	echo "                   move a regular-package file into a flavour (encrypted"
+	echo "                   by default; default target: current flavour). Use the"
+	echo "                   reserved 'common' flavour for the always-applied layer."
+	echo ""
+	echo "  copy <file> <from-flavour> <to-flavour>"
+	echo "                   copy a file from one flavour into another as a template"
+	echo "                   (encrypted by default; original is kept)"
+	echo ""
+	echo "Flavours:"
+	echo "  Regular packages are always stowed. On top of them the shared 'common'"
+	echo "  layer (if present) and the active machine flavour are stowed. Do not"
+	echo "  place the same target file in both 'common' and a machine flavour."
 	echo ""
 	echo "Options:"
 	echo "  -n      dry run"
 	echo "  -s      silent"
 	echo "  -u      unattended"
+	echo "  -p      plaintext: do not encrypt when adding/moving/copying"
 	echo ""
 }
 
@@ -72,16 +90,30 @@ check_dependencies() {
 }
 
 stow_packages() {
+	local action="$1"
 	local flags=""
 	local current_flavour
 	flavour_get_current current_flavour
-	local flavour_stow_dir=""
 
+	# --no-folding: never create directory symlinks. Regular packages and the
+	# flavour layers are stowed from different stow dirs but share parent dirs
+	# (e.g. ~/.config); per-file symlinks let them coexist without fold/unfold
+	# ownership conflicts.
+	flags="--no-folding"
 	if [ -n "${DOT_DRY:-}" ]; then
-		flags="${flags}-nv"
+		flags="${flags} -nv"
 	fi
 
-	flavour_stow_dir=$(flavour_prepare_stow "${current_flavour}")
+	# Flavour layers stowed on top of the regular packages: the shared 'common'
+	# layer (always, if present) plus the active machine flavour.
+	local -a layers=()
+	[ -d "${DOTFILES_DIR}/flavours/common" ] && layers+=("common")
+	layers+=("${current_flavour}")
+
+	local layer
+	for layer in "${layers[@]}"; do
+		flavour_prepare_stow "${layer}" >/dev/null
+	done
 
 	while IFS= read -r pkg_dir; do
 		[ -z "${pkg_dir}" ] && continue
@@ -91,16 +123,21 @@ stow_packages() {
 			continue
 		fi
 		info "  package: ${pkg}"
-		stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}" "$1" "${pkg}"
+		stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}" "${action}" "${pkg}"
 	done <<<"${PACKAGES}"
 
-	if [ -n "${flavour_stow_dir}" ] && [ -d "${flavour_stow_dir}" ]; then
-		info "  package: flavours (${current_flavour})"
-		stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}/flavours" "$1" "decrypted-${current_flavour}"
-	fi
+	for layer in "${layers[@]}"; do
+		local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${layer}"
+		if [ -d "${decrypted_dir}" ]; then
+			info "  package: flavours (${layer})"
+			stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}/flavours" "${action}" "decrypted-${layer}"
+		fi
+	done
 
-	if [ "$1" == "-D" ]; then
-		flavour_cleanup_stow "${current_flavour}"
+	if [ "${action}" = "-D" ]; then
+		for layer in "${layers[@]}"; do
+			flavour_cleanup_stow "${layer}"
+		done
 	fi
 
 	success "Done"
@@ -169,11 +206,34 @@ do_flavour() {
 		return
 	fi
 
+	if [ "${target_flavour}" = "common" ]; then
+		error "'common' is the shared layer (always applied), not a selectable flavour"
+		exit 1
+	fi
+
 	if [ ! -d "${DOTFILES_DIR}/flavours/${target_flavour}" ]; then
 		error "Flavour '${target_flavour}' does not exist"
 		echo "Available flavours:"
 		flavour_list_available | sed 's/^/  /'
 		exit 1
+	fi
+
+	local previous_flavour
+	flavour_get_current previous_flavour
+	if [ "${previous_flavour}" = "${target_flavour}" ]; then
+		info "Already on flavour: ${target_flavour}"
+		return
+	fi
+
+	# Preserve any edits made in the outgoing flavour, then unstow its layer.
+	# Regular packages and the 'common' layer stay applied across the switch;
+	# the decrypted workspace is kept as the local source of truth.
+	flavour_encrypt_changes "${previous_flavour}"
+	if [ -d "${DOTFILES_DIR}/flavours/decrypted-${previous_flavour}" ]; then
+		info "Removing previous flavour layer: ${previous_flavour}"
+		local unstow_flags="--no-folding"
+		[ -n "${DOT_DRY:-}" ] && unstow_flags="${unstow_flags} -nv"
+		stow --dotfiles ${unstow_flags} -t "${HOME}" -d "${DOTFILES_DIR}/flavours" -D "decrypted-${previous_flavour}"
 	fi
 
 	flavour_set_current "${target_flavour}"
@@ -198,12 +258,15 @@ do_add() {
 		exit 1
 	fi
 
-	source_file=$(resolve_path "${source_file}" 2>/dev/null || echo "${source_file}")
-
 	case "${add_type}" in
 	"flavour")
 		check_dependencies
-		flavour_add_file "${source_file}"
+		# optional 3rd arg selects the target flavour (default: current)
+		flavour_add_file "${source_file}" "${package_name}"
+		;;
+	"common")
+		check_dependencies
+		flavour_add_file "${source_file}" "common"
 		;;
 	"regular" | "package")
 		add_regular_file "${source_file}" "${package_name:-home}"
@@ -232,6 +295,56 @@ do_add() {
 	fi
 }
 
+do_move() {
+	check_dependencies
+
+	local file="${1:-}"
+	local target_flavour="${2:-}"
+
+	if [ -z "${file}" ]; then
+		error "No file specified"
+		usage
+		exit 1
+	fi
+
+	if ! move_to_flavour "${file}" "${target_flavour}"; then
+		exit 1
+	fi
+
+	if [ -z "${DOT_DRY:-}" ]; then
+		info "Restowing..."
+		stow_packages -R
+	fi
+}
+
+do_copy() {
+	check_dependencies
+
+	local file="${1:-}"
+	local from_flavour="${2:-}"
+	local to_flavour="${3:-}"
+
+	if [ -z "${file}" ] || [ -z "${from_flavour}" ] || [ -z "${to_flavour}" ]; then
+		error "Usage: dotfiles copy <file> <from-flavour> <to-flavour>"
+		exit 1
+	fi
+
+	if ! copy_flavour_file "${file}" "${from_flavour}" "${to_flavour}"; then
+		exit 1
+	fi
+
+	if [ -z "${DOT_DRY:-}" ]; then
+		local current_flavour
+		flavour_get_current current_flavour
+		if [ "${to_flavour}" = "${current_flavour}" ] || [ "${to_flavour}" = "common" ]; then
+			info "Restowing..."
+			stow_packages -R
+		else
+			info "Copied into '${to_flavour}'. It will be applied when you switch to that flavour."
+		fi
+	fi
+}
+
 main() {
 	# shellcheck source=/dev/null
 	source "$__dir/.scripts/print.sh"
@@ -246,7 +359,7 @@ main() {
 
 	OPTIND=1
 	OPTERR=0
-	while getopts "hnsu" opt; do
+	while getopts "hnsup" opt; do
 		case "$opt" in
 		h)
 			usage
@@ -260,6 +373,9 @@ main() {
 			;;
 		u)
 			DOT_UNA=1
+			;;
+		p)
+			DOT_FORCE_NO_ENCRYPT=1
 			;;
 		*)
 			usage
@@ -294,6 +410,12 @@ main() {
 		;;
 	add)
 		do_add "${2:-}" "${3:-}" "${4:-}"
+		;;
+	move)
+		do_move "${2:-}" "${3:-}"
+		;;
+	copy)
+		do_copy "${2:-}" "${3:-}" "${4:-}"
 		;;
 	*)
 		usage

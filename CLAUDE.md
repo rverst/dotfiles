@@ -16,11 +16,13 @@ Personal dotfiles managed with **GNU Stow**, layered with a **flavour system** (
 ./dotfiles update                                # git pull + submodule update, restowing around it
 ./dotfiles status                                # git status + encrypt any changed flavour files
 ./dotfiles flavour [name]                        # Show current flavour, or switch to it
-./dotfiles add <file> [flavour|regular] [pkg]    # Adopt an existing file into the dotfiles
+./dotfiles add <file> [flavour|regular] [pkg]    # Adopt an existing file (flavour files encrypted by default)
+./dotfiles move <file> [flavour]                 # Move a regular-package file into a flavour (encrypted by default)
+./dotfiles copy <file> <from> <to>               # Copy a file from one flavour into another as a template
 ./dotfiles reencrypt-all                         # Re-encrypt every .age file against current recipients
 ```
 
-Global flags (before the command): `-n` dry run, `-s` silent, `-u` unattended (non-interactive; defaults flavour to `server`).
+Global flags (before the command): `-n` dry run, `-s` silent, `-u` unattended (non-interactive; defaults flavour to `server`), `-p` plaintext (skip encryption when adding/moving/copying).
 
 `bootstrap` runs `dotfiles` under `bash` deliberately — the scripts use bashisms and must not be run under zsh/sh.
 
@@ -28,24 +30,27 @@ Global flags (before the command): `-n` dry run, `-s` silent, `-u` unattended (n
 
 **Entry points.** `bootstrap` ensures dependencies (`zsh`, `stow`, `age`) via Homebrew (macOS) or the native package manager (Linux: apt/pacman/dnf/zypper/apk), then invokes `dotfiles install`. `dotfiles` parses options/commands in `main()` and sources the `.scripts/` modules:
 - `print.sh` — colored logging (`info`/`success`/`warn`/`error`) and interactive prompts (`user_read`, `user_yesno`). All prompts write to stderr so command substitution stays clean.
-- `utils.sh` — `resolve_path`, plus first-run setup of `~/.gitconfig.local` and `~/.localrc`.
+- `utils.sh` — `resolve_path`; path helpers `home_to_stow_path`/`stow_to_home_path` (convert each path component between `.foo` and `dot-foo`) and `resolve_home_rel` (resolve a live path to its `$HOME`-relative form + originating repo source); first-run setup of `~/.gitconfig.local` and `~/.localrc`.
 - `age.sh` — keypair init, encrypt/decrypt, `reencrypt-all`.
-- `flavours.sh` — flavour resolution, the decrypt→stow workflow, and change re-encryption.
-- `add.sh` — adopting regular (`add_regular_file`) vs flavour (`flavour_add_file`) files.
+- `flavours.sh` — flavour resolution, the decrypt→stow workflow, change re-encryption, and `flavour_place_file` (writes a file into a flavour, encrypted or not, and keeps the decrypted workspace in sync).
+- `add.sh` — adopting regular (`add_regular_file`) vs flavour (`flavour_add_file`) files; `move_to_flavour` and `copy_flavour_file`.
 
-**Stow packages.** Top-level non-hidden directories except `flavours` are stow packages (`apps`, `bin`, `config`, `home`, `nvim`), discovered dynamically in `dotfiles`. Stow runs with `--dotfiles`, so a file named `dot-config` becomes `~/.config`. When adopting files, leading `.` is rewritten to the `dot-` prefix. `nvim` reflects the package's repo-relative path: `nvim/dot-config/nvim` → `~/.config/nvim`.
+**Stow packages.** Top-level non-hidden directories except `flavours` are stow packages (`apps`, `bin`, `config`, `home`, `nvim`), discovered dynamically in `dotfiles`. Stow runs with `--dotfiles --no-folding`, so a `dot-config` component becomes `~/.config` and directories are materialized as real dirs with per-file symlinks (this lets regular packages and the flavour layers safely share parent dirs like `~/.config`). When adopting/moving files, the full `$HOME`-relative path is converted via `home_to_stow_path` (every dotted component → `dot-`), so nested configs like `~/.config/nvim/init.lua` map correctly.
 
-**Flavours** (`personal`, `work`, `server`, or custom). The active flavour is stored in `~/.dotconfig` (read/written via `git config -f ~/.dotconfig core.flavour`). On stow, `flavour_prepare_stow` decrypts `flavours/<flavour>/*.age` into a working directory `flavours/decrypted-<flavour>/`, which is the package that actually gets stowed. That decrypted directory is the **local source of truth**: it is never blindly overwritten — existing decrypted files (your edits) are preserved, and `dotfiles status` re-encrypts changed ones back into `flavours/<flavour>/*.age`. It is removed only on uninstall/flavour-switch (`flavour_cleanup_stow`).
+**Flavours** (`personal`, `work`, `server`, or custom) **plus the always-applied `common` layer.** The active machine flavour is stored in `~/.dotconfig` (`git config -f ~/.dotconfig core.flavour`). On stow, both `common` (if present) and the active flavour are layered on top of the regular packages: `flavour_prepare_stow` decrypts `flavours/<layer>/*.age` into `flavours/decrypted-<layer>/`, which is what gets stowed. `common` is **not** a selectable flavour (excluded from `flavour`/switch); it holds configs shared across all machines. The decrypted directory is the **local source of truth**: existing decrypted files (your edits) are preserved, `dotfiles status` re-encrypts changed ones back into `flavours/<layer>/`, and a flavour switch first re-encrypts + unstows the outgoing flavour (keeping its decrypted dir). Decrypted dirs are removed on uninstall/`flavour_cleanup_stow`. **Do not place the same target file in both `common` and a machine flavour** — they'd collide at stow time.
 
-**Age encryption.** Private key: `.age/keys.txt` (gitignored, generated on first install). Public keys: `.age/recipients.txt` — one block per machine, all files encrypted to every recipient. Multi-machine flow: a new machine generates its own keypair and appends its pubkey to recipients; if it can't decrypt existing files, you must run `dotfiles reencrypt-all` on a machine that *can* decrypt, then pull. In `add.sh`/`flavours.sh`, encryption is auto-suggested by filename heuristics (names containing `secret`/`private`/`key`/`token`/`password`, or `.gitconfig`/`.zshrc`/`.bashrc`/`.profile`).
+**Encryption is the default** for flavour files (`add`/`move`/`copy`). Opt out per-invocation with `-p`, interactively at the prompt, or via `DOT_FORCE_NO_ENCRYPT`. `flavour_encrypt_changes` writes each file back in the form it already has (`.age` stays encrypted, plaintext stays plaintext) and encrypts brand-new files by default.
+
+**Age encryption.** Private key: `.age/keys.txt` (gitignored, generated on first install). Public keys: `.age/recipients.txt` — one block per machine, all files encrypted to every recipient. Multi-machine flow: a new machine generates its own keypair and appends its pubkey to recipients; if it can't decrypt existing files, you must run `dotfiles reencrypt-all` on a machine that *can* decrypt, then pull.
 
 **Submodules** (clone with `--recursive`): `nvim/dot-config/nvim` (Neovim config) and `config/dot-config/tmux/plugins/tpm` (tmux plugin manager).
 
 ## Gotchas
 
-- After editing a flavour file, run `dotfiles status` to re-encrypt it before committing — the `.age` file is what's tracked, not the decrypted copy.
+- After editing a flavour file, run `dotfiles status` to re-encrypt it before committing — the `.age` file is what's tracked, not the decrypted copy. (`status` covers the active flavour + `common`; a switch also re-encrypts the outgoing flavour.)
 - Adding a new recipient requires a `reencrypt-all` from a machine that can already decrypt, or the new machine gets undecryptable placeholders.
-- `.gitignore` has a typo — it ignores `flavours/decrytped-*/` (note the misspelling), so the real `flavours/decrypted-*/` dirs are *not* ignored; `flavours/.stow-local-ignore` keeps them out of stow but they are not git-ignored.
+- `copy` into a non-active flavour only writes the `.age`; it materializes (and goes live) when you switch to that flavour. Copy into the active flavour or `common` restows immediately.
+- Don't put the same target path in both `common` and a machine flavour — stow will refuse the overlap.
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands

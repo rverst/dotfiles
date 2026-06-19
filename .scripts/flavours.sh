@@ -81,6 +81,11 @@ flavour_prompt_selection() {
 flavour_set_current() {
 	local flavour="$1"
 
+	if [ "${flavour}" = "common" ]; then
+		error "'common' is the shared layer, not a selectable flavour"
+		return 1
+	fi
+
 	[ -f "${DOTCONFIG_FILE}" ] || : >"${DOTCONFIG_FILE}"
 
 	git config -f "${DOTCONFIG_FILE}" core.flavour "${flavour}"
@@ -90,80 +95,86 @@ flavour_set_current() {
 flavour_list_available() {
 	local flavours_dir="${DOTFILES_DIR}/flavours"
 	[ -d "${flavours_dir}" ] || return 0
-	find "${flavours_dir}" -mindepth 1 -type d -prune ! -name 'decrypted-*' -exec basename {} \; 2>/dev/null | sort || true
+	find "${flavours_dir}" -mindepth 1 -type d -prune ! -name 'decrypted-*' ! -name 'common' -exec basename {} \; 2>/dev/null | sort || true
+}
+
+# flavour_place_file <content_file> <flavour> <stow_rel> <encrypt:true|false>
+# Writes the file into flavours/<flavour>/<stow_rel>(.age). When a decrypted
+# workspace for that flavour already exists, the decrypted copy is kept in sync
+# so the change is live without a re-decrypt.
+flavour_place_file() {
+	local content_file="$1"
+	local flavour="$2"
+	local stow_rel="$3"
+	local encrypt="$4"
+
+	local flavour_dir="${DOTFILES_DIR}/flavours/${flavour}"
+	local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${flavour}"
+	local target="${flavour_dir}/${stow_rel}"
+
+	mkdir -p "$(dirname "${target}")"
+
+	if [ "${encrypt}" = "true" ]; then
+		age_encrypt_file "${content_file}" "${target}.age" || return 1
+		[ -f "${target}" ] && rm -f "${target}"
+	else
+		cp "${content_file}" "${target}"
+		[ -f "${target}.age" ] && rm -f "${target}.age"
+	fi
+
+	if [ -d "${decrypted_dir}" ]; then
+		local dwork="${decrypted_dir}/${stow_rel}"
+		mkdir -p "$(dirname "${dwork}")"
+		cp "${content_file}" "${dwork}"
+	fi
+
+	return 0
 }
 
 flavour_add_file() {
 	local source_file="$1"
-	local current_flavour
-	flavour_get_current current_flavour
-	local flavour_dir="${DOTFILES_DIR}/flavours/${current_flavour}"
+	local target_flavour="${2:-}"
+	[ -n "${target_flavour}" ] || flavour_get_current target_flavour
 
 	if [ ! -f "${source_file}" ]; then
 		error "Source file does not exist: ${source_file}"
 		return 1
 	fi
 
-	local filename
-	filename=$(basename "${source_file}")
-	local stow_filename
-
-	if [[ "${filename}" == .* ]]; then
-		stow_filename="dot-${filename#.}"
+	local abs rel src stow_rel
+	if resolve_home_rel "${source_file}" abs rel src; then
+		stow_rel="$(home_to_stow_path "${rel}")"
 	else
-		stow_filename="${filename}"
+		stow_rel="$(home_to_stow_path "$(basename "${source_file}")")"
 	fi
 
-	local target_file="${flavour_dir}/${stow_filename}"
-	local encrypted_file="${target_file}.age"
+	info "Adding ${source_file} to flavour '${target_flavour}'"
 
-	mkdir -p "${flavour_dir}"
-
-	info "Adding ${source_file} to flavour '${current_flavour}'"
-
-	local should_encrypt=false
-
-	if [ -n "${DOT_FORCE_ENCRYPT:-}" ]; then
-		should_encrypt=true
-	elif [ -n "${DOT_FORCE_NO_ENCRYPT:-}" ]; then
+	local should_encrypt=true
+	if [ -n "${DOT_FORCE_NO_ENCRYPT:-}" ]; then
 		should_encrypt=false
-	else
-		if [[ "${filename}" == *"secret"* ]] || [[ "${filename}" == *"private"* ]] || [[ "${filename}" == *"key"* ]] ||
-			[[ "${filename}" == *"token"* ]] || [[ "${filename}" == *"password"* ]] || [[ "${filename}" == ".gitconfig"* ]] ||
-			[[ "${filename}" == ".zshrc"* ]] || [[ "${filename}" == ".bashrc"* ]] || [[ "${filename}" == ".profile"* ]]; then
+	elif [ -n "${DOT_FORCE_ENCRYPT:-}" ]; then
+		should_encrypt=true
+	elif [ -z "${DOT_UNA:-}" ]; then
+		echo ""
+		local encrypt_choice
+		user_yesno "Encrypt this file?" "y" encrypt_choice
+		if [ "${encrypt_choice}" -eq 1 ]; then
 			should_encrypt=true
-		fi
-
-		if [ -z "${DOT_UNA:-}" ]; then
-			echo ""
-			local encrypt_choice
-			if [ "${should_encrypt}" = true ]; then
-				user_yesno "Encrypt this file?" "y" encrypt_choice
-				[ -z "${encrypt_choice}" ] && encrypt_choice=1
-			else
-				user_yesno "Encrypt this file?" "n" encrypt_choice
-				[ -z "${encrypt_choice}" ] && encrypt_choice=0
-			fi
-			if [ "${encrypt_choice}" -eq 1 ]; then
-				should_encrypt=true
-			else
-				should_encrypt=false
-			fi
+		else
+			should_encrypt=false
 		fi
 	fi
 
-	if [ "${should_encrypt}" = true ]; then
-		if age_encrypt_file "${source_file}" "${encrypted_file}"; then
-			success "File encrypted and added as: flavours/${current_flavour}/${stow_filename}.age"
-			info "Original file: ${source_file}"
-			info "Encrypted file: ${encrypted_file}"
+	if flavour_place_file "${source_file}" "${target_flavour}" "${stow_rel}" "${should_encrypt}"; then
+		if [ "${should_encrypt}" = "true" ]; then
+			success "File encrypted and added as: flavours/${target_flavour}/${stow_rel}.age"
 		else
-			error "Failed to encrypt file"
-			return 1
+			success "File added as: flavours/${target_flavour}/${stow_rel}"
 		fi
 	else
-		cp "${source_file}" "${target_file}"
-		success "File added as: flavours/${current_flavour}/${stow_filename}"
+		error "Failed to add file to flavour"
+		return 1
 	fi
 
 	return 0
@@ -228,37 +239,53 @@ flavour_cleanup_stow() {
 	[ ! -d "${decrypted_dir}" ] || rm -rf "${decrypted_dir}"
 }
 
+# flavour_encrypt_changes [flavour...]
+# Syncs each flavour's decrypted workspace back into flavours/<flavour>/.
+# Each file is written back in the form it already has (encrypted .age stays
+# encrypted, plaintext stays plaintext); brand-new files are encrypted by
+# default. With no arguments, processes the current flavour plus 'common'.
 flavour_encrypt_changes() {
-	local current_flavour
-	flavour_get_current current_flavour
-	local flavour_dir="${DOTFILES_DIR}/flavours/${current_flavour}"
-	local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${current_flavour}"
+	local -a flavours=("$@")
+	if [ ${#flavours[@]} -eq 0 ]; then
+		local current_flavour
+		flavour_get_current current_flavour
+		flavours=("${current_flavour}")
+		[ -d "${DOTFILES_DIR}/flavours/common" ] && flavours+=("common")
+	fi
 
-	[ -d "${decrypted_dir}" ] || return 0
+	local flavour
+	for flavour in "${flavours[@]}"; do
+		local flavour_dir="${DOTFILES_DIR}/flavours/${flavour}"
+		local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${flavour}"
+		[ -d "${decrypted_dir}" ] || continue
 
-	info "Checking for changes in flavour files..."
+		info "Checking for changes in flavour '${flavour}'..."
 
-	find "${decrypted_dir}" -type f | while IFS= read -r decrypted_file; do
-		local relative_path="${decrypted_file#${decrypted_dir}/}"
-		local encrypted_file="${flavour_dir}/${relative_path}.age"
-		local temp_file
-		temp_file=$(mktemp)
+		find "${decrypted_dir}" -type f | while IFS= read -r decrypted_file; do
+			local relative_path="${decrypted_file#${decrypted_dir}/}"
+			local encrypted_file="${flavour_dir}/${relative_path}.age"
+			local plain_file="${flavour_dir}/${relative_path}"
 
-		if [[ "${relative_path}" == dot-* ]] || [[ "${relative_path}" == *secret* ]] || [[ "${relative_path}" == *private* ]]; then
 			if [ -f "${encrypted_file}" ]; then
+				local temp_file
+				temp_file=$(mktemp)
 				if age_decrypt_file "${encrypted_file}" "${temp_file}"; then
 					if ! cmp -s "${decrypted_file}" "${temp_file}"; then
 						info "  Updating ${relative_path}.age"
 						age_encrypt_file "${decrypted_file}" "${encrypted_file}"
 					fi
 				fi
+				rm -f "${temp_file}"
+			elif [ -f "${plain_file}" ]; then
+				if ! cmp -s "${decrypted_file}" "${plain_file}"; then
+					info "  Updating ${relative_path}"
+					cp "${decrypted_file}" "${plain_file}"
+				fi
 			else
 				info "  Creating ${relative_path}.age"
 				mkdir -p "$(dirname "${encrypted_file}")"
 				age_encrypt_file "${decrypted_file}" "${encrypted_file}"
 			fi
-		fi
-
-		rm -f "${temp_file}"
+		done
 	done
 }
