@@ -1,0 +1,13 @@
+theme = smyck
+foreground = #C5C5C5
+background = #333333
+background-opacity = 0.92
+background-blur = true
+
+font-family = "BerkeleyMono Nerd Font"
+font-family-bold = "BerkeleyMono Nerd Font Bold"
+font-family-italic = "BerkeleyMono Nerd Font Italic"
+font-family-bold-italic = "BerkeleyMono Nerd Font Bold Italic"
+
+font-size = 15
+command = /opt/homebrew/bin/tmux
