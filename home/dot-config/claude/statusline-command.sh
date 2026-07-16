@@ -9,6 +9,21 @@ model=$(echo "$input" | jq -r '.model.display_name // empty')
 context_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 five_hour_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 seven_day_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+five_hour_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+seven_day_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+
+# Compact, human-readable countdown until a Unix-epoch reset time:
+#   >= 24h -> whole days (2d); >= 2h -> whole hours (3h); < 2h -> h:mm (1:23)
+fmt_reset() {
+  target="$1"
+  now=$(date +%s)
+  secs=$(( target - now ))
+  [ "$secs" -lt 0 ] && secs=0
+  if   [ "$secs" -ge 86400 ]; then printf '%dd' $(( secs / 86400 ))
+  elif [ "$secs" -ge 7200  ]; then printf '%dh' $(( secs / 3600 ))
+  else printf '%d:%02d' $(( secs / 3600 )) $(( (secs % 3600) / 60 ))
+  fi
+}
 
 # --- LEFT SIDE ---
 
@@ -56,6 +71,9 @@ fi
 if [ -n "$five_hour_pct" ]; then
   five_int=$(printf "%.0f" "$five_hour_pct")
   segment=$(printf "\033[37m5h %s%%\033[0m" "$five_int")
+  if [ -n "$five_hour_reset" ]; then
+    segment=$(printf "%s \033[90m⟳%s\033[0m" "$segment" "$(fmt_reset "$five_hour_reset")")
+  fi
   if [ -n "$right" ]; then
     right=$(printf "%s \033[90m|\033[0m %s" "$right" "$segment")
   else
@@ -67,6 +85,9 @@ fi
 if [ -n "$seven_day_pct" ]; then
   seven_int=$(printf "%.0f" "$seven_day_pct")
   segment=$(printf "\033[37m7d %s%%\033[0m" "$seven_int")
+  if [ -n "$seven_day_reset" ]; then
+    segment=$(printf "%s \033[90m⟳%s\033[0m" "$segment" "$(fmt_reset "$seven_day_reset")")
+  fi
   if [ -n "$right" ]; then
     right=$(printf "%s \033[90m|\033[0m %s" "$right" "$segment")
   else
