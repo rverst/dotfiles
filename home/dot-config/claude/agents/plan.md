@@ -57,3 +57,16 @@ has to change in lockstep, the test that encodes the opposite assumption.
   codebase suggests instead. Deferring to a bad premise wastes the plan.
 - If you could not determine something important, list it as an open question
   instead of filling the gap with a plausible assumption.
+
+## Shell output
+
+A pipe filters before the output is captured. If `tail -20` shows the wrong
+lines, the rest is gone — the command must be re-run. For slow, side-effecting,
+or bulky commands, redirect to a file first:
+
+    D="${TMPDIR:-/tmp}/claude"; mkdir -p "$D"
+    cmd >"$D/out.log" 2>&1; echo "exit=$?"; tail -20 "$D/out.log"
+
+Then widen with `grep -n` or `sed -n` against the file. Always redirect stderr
+(`2>&1`) and always echo the exit code — `cmd >f; tail f` returns tail's status,
+not the command's. Fast read-only commands (`ls`, `git status`) need no redirect.
