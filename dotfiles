@@ -16,8 +16,8 @@ DOT_FORCE_NO_ENCRYPT=
 
 DOTFILES_BRANCH=main
 DOTFILES_DIR="${__dir}"
-# Top-level packages (excluding hidden dirs and flavours)
-PACKAGES="$(find "${DOTFILES_DIR}" -mindepth 1 -type d -prune ! -name '.*' ! -name 'flavours' -print 2>/dev/null)"
+# Top-level packages (excluding hidden dirs, flavours, and the test suite)
+PACKAGES="$(find "${DOTFILES_DIR}" -mindepth 1 -type d -prune ! -name '.*' ! -name 'flavours' ! -name 'tests' -print 2>/dev/null)"
 
 usage() {
 	echo "Dotfiles installer"
