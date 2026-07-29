@@ -39,6 +39,12 @@ add_regular_file() {
 
 	info "Adding ${source_file} to package '${package_name}'"
 
+	if [ -n "${DOT_DRY:-}" ]; then
+		info "DRY RUN: would add ${package_name}/${stow_rel}"
+		[ -z "${DOT_UNA:-}" ] && info "DRY RUN: would prompt to remove original ${source_file}"
+		return 0
+	fi
+
 	mkdir -p "$(dirname "${target_file}")"
 	cp "${source_file}" "${target_file}"
 	success "File added as: ${package_name}/${stow_rel}"

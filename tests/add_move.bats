@@ -74,3 +74,14 @@ teardown() { ts_teardown; }
 	[ -f "${DOTFILES_DIR}/flavours/common/dot-config/app/conf" ]
 	[ ! -f "${DOTFILES_DIR}/flavours/common/dot-config/app/conf.age" ]
 }
+
+@test "add_regular_file dry run writes nothing" {
+	export DOT_DRY=1
+	mkdir -p "${HOME}/.local/scripts"
+	echo "hi" >"${HOME}/.local/scripts/foo"
+
+	run add_regular_file "${HOME}/.local/scripts/foo" ""
+	[ "$status" -eq 0 ]
+	[ ! -e "${DOTFILES_DIR}/local/dot-local/scripts/foo" ]
+	[ -f "${HOME}/.local/scripts/foo" ] # original untouched
+}
