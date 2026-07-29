@@ -41,7 +41,7 @@ usage() {
 	echo "                            by default; optional flavour-name arg)"
 	echo "                   common:  add to the shared 'common' layer (encrypted)"
 	echo "                   regular: add to regular package (default: config for"
-	echo "                            ~/.config files, otherwise home)"
+	echo "                            ~/.config, local for ~/.local, otherwise home)"
 	echo "                   no type: interactive selection"
 	echo ""
 	echo "  move <file> [flavour]"
@@ -320,7 +320,9 @@ do_add() {
 			_add_restow_if_active "common"
 		;;
 	"regular" | "package")
-		add_regular_file "${source_file}" "${package_name:-home}"
+		# Empty package_name lets add_regular_file pick the default by path
+		# (~/.config -> config, ~/.local -> local, else home).
+		add_regular_file "${source_file}" "${package_name}"
 		;;
 	"")
 		check_dependencies

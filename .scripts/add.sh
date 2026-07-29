@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
 # Default regular package for a $HOME-relative path. Files under ~/.config are
-# owned by the 'config' package; everything else defaults to 'home'. Keeps the
-# ~/.config content from getting split across both packages over time.
+# owned by the 'config' package and files under ~/.local by the 'local' package;
+# everything else defaults to 'home'. Keeps each of those trees from getting split
+# across multiple packages over time.
 _regular_default_package() {
 	case "$1" in
 	.config/*) echo "config" ;;
+	.local/*) echo "local" ;;
 	*) echo "home" ;;
 	esac
 	return 0

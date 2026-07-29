@@ -23,6 +23,17 @@ teardown() { ts_teardown; }
 	[ "$output" = ".zshrc" ]
 }
 
+@test "_regular_default_package routes ~/.config to config, ~/.local to local, else home" {
+	run _regular_default_package ".config/nvim/init.lua"
+	[ "$output" = "config" ]
+	run _regular_default_package ".local/scripts/foo"
+	[ "$output" = "local" ]
+	run _regular_default_package ".zshrc"
+	[ "$output" = "home" ]
+	run _regular_default_package ".config"
+	[ "$output" = "home" ]
+}
+
 @test "resolve_home_rel computes rel and finds no src for a plain file" {
 	mkdir -p "${HOME}/.config/foo"
 	echo hi >"${HOME}/.config/foo/bar"
