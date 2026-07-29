@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+# Default regular package for a $HOME-relative path. Files under ~/.config are
+# owned by the 'config' package; everything else defaults to 'home'. Keeps the
+# ~/.config content from getting split across both packages over time.
+_regular_default_package() {
+	case "$1" in
+	.config/*) echo "config" ;;
+	*) echo "home" ;;
+	esac
+	return 0
+}
+
 add_regular_file() {
 	local source_file="$1"
 	local package_name="$2"
@@ -17,7 +28,7 @@ add_regular_file() {
 	fi
 	source_file="${abs}"
 
-	[ -z "${package_name}" ] && package_name="home"
+	[ -z "${package_name}" ] && package_name="$(_regular_default_package "${rel}")"
 
 	local package_dir="${DOTFILES_DIR}/${package_name}"
 	local stow_rel
@@ -229,8 +240,11 @@ add_file_interactive() {
 				return $?
 				;;
 			4)
-				local package_name
-				user_read "Enter package name" "home" package_name
+				local package_name abs rel src default_pkg="home"
+				if resolve_home_rel "${source_file}" abs rel src; then
+					default_pkg="$(_regular_default_package "${rel}")"
+				fi
+				user_read "Enter package name" "${default_pkg}" package_name
 				add_regular_file "${source_file}" "${package_name}"
 				return $?
 				;;
