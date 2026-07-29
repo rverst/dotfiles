@@ -212,5 +212,10 @@ echo ""
 install_dependencies
 maybe_set_default_shell_to_zsh
 
-# Always run the dotfiles script under bash (the scripts use bashisms)
-bash "${__dir}/dotfiles" install
+# Always run the dotfiles script under bash (the scripts use bashisms).
+# Propagate unattended mode; the -u flag must precede the subcommand (getopts).
+if [ "${UNATTENDED}" -eq 1 ]; then
+	bash "${__dir}/dotfiles" -u install
+else
+	bash "${__dir}/dotfiles" install
+fi

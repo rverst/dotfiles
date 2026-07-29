@@ -183,7 +183,13 @@ do_install() {
 	age_init || true
 	install_git_hooks
 
-	info "Installing dotfiles with flavour: $(flavour_get_current)"
+	# Resolve the flavour once (may prompt) and persist it to ~/.dotconfig so
+	# later commands don't re-prompt. Skip the write on a dry run.
+	local flavour
+	flavour_get_current flavour
+	[ -z "${DOT_DRY:-}" ] && flavour_set_current "${flavour}"
+
+	info "Installing dotfiles with flavour: ${flavour}"
 	stow_packages -S
 
 	[ -z "${DOT_UNA:-}" ] && setup_gitconfig
@@ -327,7 +333,7 @@ do_add() {
 		;;
 	esac
 
-	if [ -z "${DOT_UNA:-}" ]; then
+	if [ -z "${DOT_DRY:-}" ] && [ -z "${DOT_UNA:-}" ]; then
 		echo ""
 		local commit_choice
 		user_yesno "Commit changes to git?" "y" commit_choice
