@@ -25,6 +25,21 @@ install_dependencies() {
 	ensure_cmd "age" "age" "age"
 }
 
+install_optional_tools() {
+	# gitleaks powers the pre-commit secret scan (.githooks/pre-commit). It's
+	# nice-to-have, not required: the hook skips the scan gracefully when it's
+	# absent, so a failed or unsupported install must never abort bootstrap.
+	# Run in a subshell so an internal `exit` from ensure_cmd stays contained.
+	if command -v gitleaks >/dev/null 2>&1; then
+		return 0
+	fi
+	echo "Installing optional tool: gitleaks (pre-commit secret scanner)..."
+	if ! (ensure_cmd "gitleaks" "gitleaks" "gitleaks"); then
+		echo "Note: gitleaks not installed; the pre-commit secret scan will be skipped."
+		echo "Install it later from https://github.com/gitleaks/gitleaks to enable it."
+	fi
+}
+
 usage() {
 	echo "Usage: ${__base} [--set-default-zsh] [--unattended]"
 	echo ""
@@ -210,6 +225,7 @@ maybe_set_default_shell_to_zsh() {
 
 echo ""
 install_dependencies
+install_optional_tools
 maybe_set_default_shell_to_zsh
 
 # Always run the dotfiles script under bash (the scripts use bashisms).

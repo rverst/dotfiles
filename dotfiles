@@ -159,6 +159,32 @@ install_git_hooks() {
 	info "Git hooks enabled (core.hooksPath=.githooks)"
 }
 
+# _maybe_commit_changes <commit_message>
+# Interactively offer to stage and commit repo changes after a command that
+# produced them (add/move/copy/reencrypt-all). No-op on dry run, in unattended
+# mode, or when the working tree is clean.
+_maybe_commit_changes() {
+	local message="$1"
+	[ -n "${DOT_DRY:-}" ] && return 0
+	[ -n "${DOT_UNA:-}" ] && return 0
+
+	# Nothing to commit? Don't prompt (staged or unstaged changes both count).
+	if git -C "${DOTFILES_DIR}" diff --quiet &&
+		git -C "${DOTFILES_DIR}" diff --cached --quiet &&
+		[ -z "$(git -C "${DOTFILES_DIR}" ls-files --others --exclude-standard)" ]; then
+		return 0
+	fi
+
+	echo ""
+	local commit_choice
+	user_yesno "Commit changes to git?" "y" commit_choice
+	if [ "${commit_choice}" -eq 1 ]; then
+		git -C "${DOTFILES_DIR}" add -A
+		git -C "${DOTFILES_DIR}" commit -m "${message}"
+		info "Changes committed"
+	fi
+}
+
 # _add_restow_if_active <target_flavour>
 # Restows so a freshly added flavour file goes live, but only when the target is
 # the active layer (current flavour or the always-applied 'common'). For other
@@ -290,6 +316,7 @@ do_reencrypt_all() {
 	check_dependencies
 	age_require_can_decrypt || exit 1
 	age_reencrypt_all
+	_maybe_commit_changes "Re-encrypt all files with current recipients"
 }
 
 do_add() {
@@ -336,17 +363,7 @@ do_add() {
 		;;
 	esac
 
-	if [ -z "${DOT_DRY:-}" ] && [ -z "${DOT_UNA:-}" ]; then
-		echo ""
-		local commit_choice
-		user_yesno "Commit changes to git?" "y" commit_choice
-
-		if [ "${commit_choice}" -eq 1 ]; then
-			git -C "${DOTFILES_DIR}" add .
-			git -C "${DOTFILES_DIR}" commit -m "Add $(basename "${source_file}") to ${add_type:-dotfiles}"
-			info "Changes committed"
-		fi
-	fi
+	_maybe_commit_changes "Add $(basename "${source_file}") to ${add_type:-dotfiles}"
 }
 
 do_move() {
