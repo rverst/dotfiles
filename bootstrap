@@ -1,64 +1,221 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 #
-# bootstrap.sh
-# This script bootstraps the setup of a new machine. It checks
-# if the necessary dependencies are installed and installs them
-# if needed. After that, it runs the dotfiles script with --install.
-#
+# Bootstrap a new machine:
+# - Ensure zsh, stow, and age are installed (strict dependencies)
+# - Optionally set zsh as the default shell (opt-in)
+# - Use homebrew on macOS or if available, native package manager on Linux as fallback
+# - For macOS, if Homebrew is missing, prompt to install it
+# - Run dotfiles installer under bash
 set -o errexit
 set -o nounset
-#set -o xtrace
+set -o pipefail
 
-# set `magic` variable to the directory of the script
 __dir="$(cd "$(dirname "$0")" && pwd)"
 __file="${__dir}/$(basename "$0")"
-__base="$(basename ${__file})"
+__base="$(basename "${__file}")"
 __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
-install_zsh() {
-	dist=$(uname -s)
-	local uid=$(id -u)
+SET_ZSH_DEFAULT=0
+UNATTENDED=0
 
-	if [ "$dist" = "Linux" ]; then
-		if [ -f /etc/os-release ]; then
-			local v=$(cat /etc/os-release | grep -i -e "^id=" | sed -r "s/^id=(.+)/\1/i")
-			if [ "$v" = "debian" ] || [ "$v" = "ubuntu" ]; then
-				cmd="apt-get -y install zsh"
-				[ $uid -gt 0 ] && cmd="sudo $cmd"
-				$cmd
-			elif [ "$v" = "arch" ]; then
-				cmd="pacman -S zsh"
-				[ $uid -gt 0 ] && cmd="sudo $cmd"
-				cmd
-			else
-				echo "linux variant not supported: $v" && exit 1
-			fi
+install_dependencies() {
+	#			cmd   linux-package   brew-formula
+	ensure_cmd "zsh" "zsh" "zsh"
+	ensure_cmd "stow" "stow" "stow"
+	ensure_cmd "age" "age" "age"
+}
+
+usage() {
+	echo "Usage: ${__base} [--set-default-zsh] [--unattended]"
+	echo ""
+	echo "Options:"
+	echo "  --set-default-zsh   also set zsh as your default login shell (using chsh)"
+	echo "  --unattended        do not prompt (non-interactive)"
+	echo ""
+}
+
+while [ $# -gt 0 ]; do
+	case "${1}" in
+	--set-default-zsh)
+		SET_ZSH_DEFAULT=1
+		shift
+		;;
+	--unattended)
+		UNATTENDED=1
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		echo "Unknown option: ${1}"
+		usage
+		exit 1
+		;;
+	esac
+done
+
+ensure_homebrew() {
+	if command -v brew >/dev/null 2>&1; then
+		return 0
+	fi
+
+	echo "Homebrew is not installed."
+	if [ "${UNATTENDED}" -eq 1 ]; then
+		echo "Attempting to install Homebrew unattended..."
+		NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	else
+		echo "Homebrew is required to install dependencies on macOS."
+		echo "Install Homebrew now?"
+		read -r -p "Run the official Homebrew installer script? [Y/n] " ans
+		[ -z "${ans}" ] && ans="y"
+		if [[ "${ans}" =~ ^[Yy]$ ]]; then
+			NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 		else
-			echo "not supported" && exit 1
+			echo "Please install Homebrew from https://brew.sh and re-run this script."
+			exit 1
 		fi
 	fi
 
-	echo ""
-	zsh=$(command -v zsh)
-	echo "Setting 'zsh' as login shell, enter your"
-	echo "password when prompted"
-	if [ $uid -eq 0 ]; then
-		chsh -s "$zsh" $SUDO_USER || exit 1
-	else
-		chsh -s "$zsh" || exit 1
+	# Add Homebrew to PATH for this session (Apple Silicon vs Intel)
+	if [ -x /opt/homebrew/bin/brew ]; then
+		eval "$(/opt/homebrew/bin/brew shellenv)"
+	elif [ -x /usr/local/bin/brew ]; then
+		eval "$(/usr/local/bin/brew shellenv)"
 	fi
-	echo ""
-	echo "You need to logout and login again or reboot and call this script again:"
-	echo "$__file"
-	exit 0
+
+	if ! command -v brew >/dev/null 2>&1; then
+		echo "Homebrew installation appears to have failed or brew is not in PATH."
+		echo "Make sure brew is installed and available, then re-run."
+		exit 1
+	fi
+}
+
+install_brew_pkg_if_missing() {
+	local pkg="$1"
+	if ! brew list --versions "${pkg}" >/dev/null 2>&1; then
+		echo "Installing ${pkg} via Homebrew..."
+		brew install "${pkg}"
+	fi
+}
+
+install_linux_pkgs() {
+	# Accepts a list of package names to install with the detected package manager
+	local uid
+	uid=$(id -u)
+	local SUDO=""
+	[ "${uid}" -ne 0 ] && SUDO="sudo"
+
+	if [ ! -f /etc/os-release ]; then
+		echo "/etc/os-release not found; cannot determine package manager."
+		exit 1
+	fi
+
+	# shellcheck disable=SC1091
+	. /etc/os-release
+	case "${ID}" in
+	alpine)
+		${SUDO} apk add --no-cache "$@"
+		;;
+	debian | ubuntu)
+		${SUDO} apt-get update -y
+		${SUDO} apt-get install -y "$@"
+		;;
+	arch | archlinux)
+		${SUDO} pacman -Sy --noconfirm "$@"
+		;;
+	fedora)
+		${SUDO} dnf install -y "$@"
+		;;
+	opensuse* | sles)
+		${SUDO} zypper install -y "$@"
+		;;
+	*)
+		echo "Linux variant not explicitly supported: ${ID}"
+		echo "Please install packages manually: $*"
+		exit 1
+		;;
+	esac
+}
+
+ensure_cmd() {
+	# ensure_cmd <command> <linux-package> <brew-formula>
+	local cmd="$1"
+	local linux_pkg="$2"
+	local brew_pkg="$3"
+
+	if command -v "${cmd}" >/dev/null 2>&1; then
+		return 0
+	fi
+
+	# if brew is already installed, use it directly, regardless of OS (linuxbrew)
+	if command -v "brew" >/dev/null 2>&1; then
+		install_brew_pkg_if_missing "${brew_pkg}"
+	fi
+
+	local os
+	os=$(uname -s)
+	if [ "${os}" = "Darwin" ]; then
+		ensure_homebrew
+		install_brew_pkg_if_missing "${brew_pkg}"
+	elif [ "${os}" = "Linux" ]; then
+		install_linux_pkgs "${linux_pkg}"
+	else
+		echo "Unsupported OS: ${os}"
+		echo "Please install '${cmd}' manually and re-run."
+		exit 1
+	fi
+
+	if ! command -v "${cmd}" >/dev/null 2>&1; then
+		echo "Failed to install '${cmd}'. Please install it manually and re-run."
+		exit 1
+	fi
+}
+
+maybe_set_default_shell_to_zsh() {
+	local zsh_path
+	zsh_path=$(command -v zsh)
+	if [ -z "${zsh_path}" ]; then
+		echo "zsh not found; cannot set as default shell"
+		return 1
+	fi
+
+	if [ "${UNATTENDED}" -eq 0 ] && [ "${SET_ZSH_DEFAULT}" -eq 0 ]; then
+		echo "'zsh' is installed. Do you want to make it your default shell?"
+		read -r -p "Set zsh as default shell now? [y/N] " ans
+		if [[ "${ans}" =~ ^[Yy]$ ]]; then
+			SET_ZSH_DEFAULT=1
+		fi
+	fi
+
+	if [ "${SET_ZSH_DEFAULT}" -eq 1 ]; then
+		echo "Setting 'zsh' as your login shell. You may be prompted for your password."
+		local uid
+		uid=$(id -u)
+		if command -v chsh >/dev/null 2>&1; then
+			if [ "${uid}" -eq 0 ]; then
+				chsh -s "${zsh_path}" "${SUDO_USER:-root}" || exit 1
+			else
+				chsh -s "${zsh_path}" || exit 1
+			fi
+			echo "Default shell set to: ${zsh_path}"
+			echo "You may need to log out and back in for changes to take effect."
+		else
+			echo "chsh not available; cannot set default shell automatically."
+			return 1
+		fi
+	fi
 }
 
 echo ""
-if [ "$(expr "$SHELL" : '.*/\(.*\)')" = "zsh" ]; then
-	zsh "$__dir/dotfiles install"
+install_dependencies
+maybe_set_default_shell_to_zsh
+
+# Always run the dotfiles script under bash (the scripts use bashisms).
+# Propagate unattended mode; the -u flag must precede the subcommand (getopts).
+if [ "${UNATTENDED}" -eq 1 ]; then
+	bash "${__dir}/dotfiles" -u install
 else
-	echo "'zsh' is not your default shell, these dotfiles are build on zsh."
-	read -p "Install 'zsh' and call \`chsh /usr/bin/zsh\` now [Y/n]" a
-	[ "$a" = "" ] && a=y
-	[ "$a" = "y" ] || [ "$a" = "Y" ] && install_zsh || exit 0
+	bash "${__dir}/dotfiles" install
 fi

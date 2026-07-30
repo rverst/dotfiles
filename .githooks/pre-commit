@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+#
+# pre-commit: keep encrypted secrets safe and portable.
+#
+# 1. Re-encrypt any edited decrypted-* workspaces so the .age files match your
+#    plaintext edits (so machines that pull can decrypt the latest content).
+# 2. If recipients.txt / master.txt changed, re-encrypt everything to the full
+#    recipient set.
+# 3. Refuse the commit if any staged .age file cannot be decrypted on this
+#    machine (the canary against committing unreadable ciphertext).
+#
+# Enabled via: git config core.hooksPath .githooks  (done by `dotfiles install`).
+set -o errexit
+set -o nounset
+set -o pipefail
+
+DOTFILES_DIR="$(git rev-parse --show-toplevel)"
+export DOTFILES_DIR
+
+# Non-interactive: never prompt from a hook.
+DOT_UNA=1
+DOT_SIL=
+export DOT_UNA
+
+# shellcheck source=/dev/null
+source "${DOTFILES_DIR}/.scripts/print.sh"
+# shellcheck source=/dev/null
+source "${DOTFILES_DIR}/.scripts/utils.sh"
+# shellcheck source=/dev/null
+source "${DOTFILES_DIR}/.scripts/age.sh"
+# shellcheck source=/dev/null
+source "${DOTFILES_DIR}/.scripts/flavours.sh"
+
+cd "${DOTFILES_DIR}"
+
+# --- 1. Re-encrypt edited decrypted workspaces -----------------------------
+# Derive layers from the decrypted-* dirs that exist, so we never prompt for a
+# flavour selection.
+layers=()
+for d in flavours/decrypted-*/; do
+	[ -d "${d}" ] || continue
+	name="$(basename "${d}")"
+	layers+=("${name#decrypted-}")
+done
+if [ ${#layers[@]} -gt 0 ]; then
+	flavour_encrypt_changes "${layers[@]}"
+fi
+
+# --- 2. Re-encrypt all if the recipient set changed ------------------------
+if git diff --cached --name-only --diff-filter=ACM |
+	grep -qE '^\.age/(recipients\.txt|master\.txt)$'; then
+	info "Recipient set changed; re-encrypting all files..."
+	if age_can_decrypt_existing; then
+		age_reencrypt_all
+	else
+		error "Recipients changed but this machine cannot decrypt; cannot re-encrypt."
+		error "Run reencrypt-all from a machine that can decrypt (or with the master key)."
+		exit 1
+	fi
+fi
+
+# Stage any .age files the steps above (re)wrote.
+git add -A -- '.age' 'flavours' >/dev/null 2>&1 || true
+
+# --- 3. Canary: every staged .age must be decryptable here -----------------
+failed=0
+while IFS= read -r f; do
+	[ -n "${f}" ] || continue
+	case "${f}" in
+	*.age) ;;
+	*) continue ;;
+	esac
+	[ -f "${f}" ] || continue
+	if ! age_can_decrypt_file "${f}"; then
+		error "Cannot decrypt staged file: ${f}"
+		failed=1
+	fi
+done < <(git diff --cached --name-only --diff-filter=ACM)
+
+if [ "${failed}" -ne 0 ]; then
+	error "Aborting commit: one or more staged .age files are not readable on this machine."
+	error "Fix the recipient set / re-encrypt, then commit again."
+	exit 1
+fi
+
+exit 0

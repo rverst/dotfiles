@@ -1,1 +1,6 @@
 \.DS_Store
+# zsh runtime state (gitignored) must never be stowed over the live ~/.config/zsh files
+\.zsh_history
+\.zsh_sessions
+\.zcompdump
+\.zcompcache

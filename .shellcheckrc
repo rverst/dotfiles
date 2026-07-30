@@ -1,0 +1,17 @@
+# shellcheck configuration for the dotfiles scripts.
+#
+# These disables are deliberate for this codebase:
+#   SC1091 - sourced files (.scripts/*.sh) are resolved at runtime, not lintable
+#            from every entry point.
+#   SC2034 - DOT_* option flags are set in one script and read by functions in
+#            the sourced .scripts/*.sh via the shared shell environment; they are
+#            not unused.
+#   SC2086 - intentional word-splitting of accumulated flag strings (e.g. stow
+#            ${flags}) and the newline-delimited ${PACKAGES} list.
+#   SC2064 - the reencrypt cleanup trap intentionally expands ${temp_dir} at
+#            trap-definition time (it is already known and fixed).
+#   SC2088 - case patterns that match a literal "~/" prefix the user typed; no
+#            tilde expansion is intended there.
+#   SC2295 - path-stripping expansions like ${p#${DOTFILES_DIR}/} operate on
+#            real filesystem paths that never contain glob metacharacters.
+disable=SC1091,SC2034,SC2086,SC2064,SC2088,SC2295

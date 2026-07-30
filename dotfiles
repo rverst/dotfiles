@@ -1,106 +1,424 @@
-#!/usr/bin/env zsh
-#
-# dotfiles
-#
+#!/usr/bin/env bash
+
 set -o errexit
 set -o nounset
+set -o pipefail
 
 __dir="$(cd "$(dirname "$0")" && pwd)"
 __file="${__dir}/$(basename "$0")"
-__base="$(basename ${__file})"
+__base="$(basename "${__file}")"
 __root="$(cd "$(dirname "${__dir}")" && pwd)"
 
 DOT_DRY=
 DOT_SIL=
 DOT_UNA=
+DOT_FORCE_NO_ENCRYPT=
 
 DOTFILES_BRANCH=main
-DOTFILES_DIR=${__dir}
-PACKAGES=$(find ${DOTFILES_DIR} -type d \( -name "apps" \) -prune -o -type d ! -name ".*" ! -name "." -print -maxdepth 1)
+DOTFILES_DIR="${__dir}"
+# Top-level packages (excluding hidden dirs, flavours, and the test suite)
+PACKAGES="$(find "${DOTFILES_DIR}" -mindepth 1 -type d -prune ! -name '.*' ! -name 'flavours' ! -name 'tests' -print 2>/dev/null)"
 
 usage() {
 	echo "Dotfiles installer"
 	echo ""
 	echo "Usage:"
 	echo ""
-	echo "	dotfiles [options] <command> "
+	echo "  dotfiles [options] <command> [args]"
 	echo ""
-	echo "The commands are:"
+	echo "Commands:"
+	echo "  install          install the dotfiles"
+	echo "  reinstall        reinstall the dotfiles (unlink->link)"
+	echo "  uninstall        uninstall the dotfiles (unlink)"
+	echo "  update           update the dotfiles (check remote repository)"
+	echo "  status           encrypt changes and check git status"
+	echo "  flavour [name]   show current flavour or switch to specified flavour"
+	echo "  reencrypt-all    re-encrypt all files with current recipients"
 	echo ""
-	echo "	install		install the dotfiles"
-	echo "	reinstall	reinstall the dotfiles (unlink->link)"
-	echo "	uninstall	uninstall the dotfiles (unlink)"
-	echo "	update		update the dotfiles (check remote repository)"
-	echo "	help		show this info"
+	echo "  add <file> [flavour|common|regular] [flavour-name|package]"
+	echo "                   add existing file to dotfiles"
+	echo "                   flavour: add to a flavour (default: current; encrypted"
+	echo "                            by default; optional flavour-name arg)"
+	echo "                   common:  add to the shared 'common' layer (encrypted)"
+	echo "                   regular: add to regular package (default: config for"
+	echo "                            ~/.config, local for ~/.local, otherwise home)"
+	echo "                   no type: interactive selection"
 	echo ""
-	echo "Possible options are:"
+	echo "  move <file> [flavour]"
+	echo "                   move a regular-package file into a flavour (encrypted"
+	echo "                   by default; default target: current flavour). Use the"
+	echo "                   reserved 'common' flavour for the always-applied layer."
 	echo ""
-	echo "	-n		dry run"
-	echo "	-s		silent"
-	echo "	-u		unattended"
+	echo "  copy <file> <from-flavour> <to-flavour>"
+	echo "                   copy a file from one flavour into another as a template"
+	echo "                   (encrypted by default; original is kept)"
+	echo ""
+	echo "Flavours:"
+	echo "  Regular packages are always stowed. On top of them the shared 'common'"
+	echo "  layer (if present) and the active machine flavour are stowed. Do not"
+	echo "  place the same target file in both 'common' and a machine flavour."
+	echo ""
+	echo "Options:"
+	echo "  -n      dry run"
+	echo "  -s      silent"
+	echo "  -u      unattended"
+	echo "  -p      plaintext: do not encrypt when adding/moving/copying"
 	echo ""
 }
 
-function cleanup() {
+cleanup() {
 	info "Cleanup"
 	exit 0
 }
 
-function stow_packages() {
-	local flags=""
-	if [ -n "${DOT_DRY}" ]; then
-		flags="${flags}-nv"
+check_dependencies() {
+	if ! command -v age >/dev/null 2>&1; then
+		error "Age is required but not installed"
+		info "Install with: brew install age - or your package manager"
+		exit 1
 	fi
-	while read -r pkg_dir; do
-		local pkg=$(basename ${pkg_dir})
-		info "  package: ${pkg}"
-		stow --dotfiles ${flags} -t ${HOME} -d ${DOTFILES_DIR} $1 ${pkg}
-	done <<<${PACKAGES}
-	success "Done\n"
+
+	if ! command -v stow >/dev/null 2>&1; then
+		error "Stow is required but not installed"
+		exit 1
+	fi
+
+	if ! command -v zsh >/dev/null 2>&1; then
+		error "zsh is required (for interactive shell configs) but not installed"
+		info "Please run './bootstrap' to install it, or install it via your package manager"
+		exit 1
+	fi
 }
 
-function do_install() {
-	info "Installing dotfiles"
+stow_packages() {
+	local action="$1"
+	local flags=""
+	local current_flavour
+	flavour_get_current current_flavour
+
+	# --no-folding: never create directory symlinks. Regular packages and the
+	# flavour layers are stowed from different stow dirs but share parent dirs
+	# (e.g. ~/.config); per-file symlinks let them coexist without fold/unfold
+	# ownership conflicts.
+	flags="--no-folding"
+	if [ -n "${DOT_DRY:-}" ]; then
+		flags="${flags} -nv"
+	fi
+
+	# Flavour layers stowed on top of the regular packages: the shared 'common'
+	# layer (always, if present) plus the active machine flavour.
+	local -a layers=()
+	[ -d "${DOTFILES_DIR}/flavours/common" ] && layers+=("common")
+	layers+=("${current_flavour}")
+
+	local layer
+	for layer in "${layers[@]}"; do
+		flavour_prepare_stow "${layer}" >/dev/null
+	done
+
+	while IFS= read -r pkg_dir; do
+		[ -z "${pkg_dir}" ] && continue
+		local pkg
+		pkg=$(basename "${pkg_dir}")
+		if [ "${pkg}" = "flavours" ]; then
+			continue
+		fi
+		info "  package: ${pkg}"
+		stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}" "${action}" "${pkg}"
+	done <<<"${PACKAGES}"
+
+	for layer in "${layers[@]}"; do
+		local decrypted_dir="${DOTFILES_DIR}/flavours/decrypted-${layer}"
+		if [ -d "${decrypted_dir}" ]; then
+			info "  package: flavours (${layer})"
+			stow --dotfiles ${flags} -t "${HOME}" -d "${DOTFILES_DIR}/flavours" "${action}" "decrypted-${layer}"
+		fi
+	done
+
+	if [ "${action}" = "-D" ]; then
+		for layer in "${layers[@]}"; do
+			flavour_cleanup_stow "${layer}"
+		done
+	fi
+
+	success "Done"
+}
+
+# install_git_hooks
+# Points git at the repo's tracked hooks so the pre-commit re-encrypt/verify hook
+# runs for everyone. Idempotent.
+install_git_hooks() {
+	local hooks_dir="${DOTFILES_DIR}/.githooks"
+	[ -d "${hooks_dir}" ] || return 0
+	[ -n "${DOT_DRY:-}" ] && {
+		info "DRY RUN: would set core.hooksPath to .githooks"
+		return 0
+	}
+	git -C "${DOTFILES_DIR}" config core.hooksPath .githooks
+	chmod +x "${hooks_dir}"/* 2>/dev/null || true
+	info "Git hooks enabled (core.hooksPath=.githooks)"
+}
+
+# _add_restow_if_active <target_flavour>
+# Restows so a freshly added flavour file goes live, but only when the target is
+# the active layer (current flavour or the always-applied 'common'). For other
+# flavours the file is applied on switch.
+_add_restow_if_active() {
+	local target="$1"
+	[ -n "${DOT_DRY:-}" ] && return 0
+	local current
+	flavour_get_current current
+	if [ "${target}" = "common" ] || [ "${target}" = "${current}" ]; then
+		info "Restowing..."
+		stow_packages -R
+	else
+		info "Added into '${target}'. It will be applied when you switch to that flavour."
+	fi
+}
+
+do_install() {
+	check_dependencies
+	# Tolerate a machine that cannot decrypt yet: age_init warns and returns
+	# non-zero, but install should still stow (encrypted files become
+	# placeholders until recovery). See flavour_prepare_stow.
+	age_init || true
+	install_git_hooks
+
+	# Resolve the flavour once (may prompt) and persist it to ~/.dotconfig so
+	# later commands don't re-prompt. Skip the write on a dry run.
+	local flavour
+	flavour_get_current flavour
+	[ -z "${DOT_DRY:-}" ] && flavour_set_current "${flavour}"
+
+	info "Installing dotfiles with flavour: ${flavour}"
 	stow_packages -S
 
-	[ -z $DOT_UNA ] && setup_gitconfig
+	[ -z "${DOT_UNA:-}" ] && setup_gitconfig
 	setup_localrc
 }
 
-function do_reinstall() {
-	info "Reinstalling dotfiles"
+do_reinstall() {
+	check_dependencies
+	info "Reinstalling dotfiles with flavour: $(flavour_get_current)"
 	stow_packages -R
 }
 
-function do_uninstall() {
+do_uninstall() {
 	info "Uninstalling dotfiles"
 	stow_packages -D
 }
 
-function do_update() {
+do_update() {
+	check_dependencies
 	info "Updating dotfiles"
-	if ! git -C ${DOTFILES_DIR} diff --exit-code >/dev/null; then
+
+	if ! git -C "${DOTFILES_DIR}" diff --exit-code >/dev/null; then
 		warn "Dotfiles repository is dirty. Commit or stash your changes first."
 		exit 1
 	fi
-	# TODO: check if local is up to date with remote -> no update needed
 
 	stow_packages -D
-	git -C ${DOTFILES_DIR} pull origin ${DOTFILES_BRANCH}
-	git submodule update --recursive
+	git -C "${DOTFILES_DIR}" pull origin "${DOTFILES_BRANCH}"
+	git -C "${DOTFILES_DIR}" submodule update --recursive
 	stow_packages -S
 }
 
-function main() {
+do_status() {
+	check_dependencies
+
+	info "Git Status:"
+	git -C "${DOTFILES_DIR}" status --short
+
+	info "Current flavour: $(flavour_get_current)"
+
+	age_require_can_decrypt || exit 1
+	flavour_encrypt_changes
+
+	echo ""
+	info "Git Status after encryption check:"
+	git -C "${DOTFILES_DIR}" status --short
+}
+
+do_flavour() {
+	local target_flavour="$1"
+
+	if [ -z "${target_flavour}" ]; then
+		echo "Current flavour: $(flavour_get_current)"
+		echo ""
+		echo "Available flavours:"
+		flavour_list_available | sed 's/^/  /'
+		return
+	fi
+
+	if [ "${target_flavour}" = "common" ]; then
+		error "'common' is the shared layer (always applied), not a selectable flavour"
+		exit 1
+	fi
+
+	if [ ! -d "${DOTFILES_DIR}/flavours/${target_flavour}" ]; then
+		error "Flavour '${target_flavour}' does not exist"
+		echo "Available flavours:"
+		flavour_list_available | sed 's/^/  /'
+		exit 1
+	fi
+
+	local previous_flavour
+	flavour_get_current previous_flavour
+	if [ "${previous_flavour}" = "${target_flavour}" ]; then
+		info "Already on flavour: ${target_flavour}"
+		return
+	fi
+
+	# Preserve any edits made in the outgoing flavour, then unstow its layer.
+	# Regular packages and the 'common' layer stay applied across the switch;
+	# the decrypted workspace is kept as the local source of truth.
+	flavour_encrypt_changes "${previous_flavour}"
+	if [ -d "${DOTFILES_DIR}/flavours/decrypted-${previous_flavour}" ]; then
+		info "Removing previous flavour layer: ${previous_flavour}"
+		local unstow_flags="--no-folding"
+		[ -n "${DOT_DRY:-}" ] && unstow_flags="${unstow_flags} -nv"
+		stow --dotfiles ${unstow_flags} -t "${HOME}" -d "${DOTFILES_DIR}/flavours" -D "decrypted-${previous_flavour}"
+	fi
+
+	flavour_set_current "${target_flavour}"
+
+	info "Switching to flavour: ${target_flavour}"
+	stow_packages -R
+}
+
+do_reencrypt_all() {
+	check_dependencies
+	age_require_can_decrypt || exit 1
+	age_reencrypt_all
+}
+
+do_add() {
+	local source_file="${1:-}"
+	local add_type="${2:-}"
+	local package_name="${3:-}"
+
+	if [ -z "${source_file}" ]; then
+		error "No file specified"
+		usage
+		exit 1
+	fi
+
+	case "${add_type}" in
+	"flavour")
+		check_dependencies
+		age_require_can_decrypt || exit 1
+		# optional 3rd arg selects the target flavour (default: current)
+		local target_flavour="${package_name}"
+		[ -n "${target_flavour}" ] || flavour_get_current target_flavour
+		flavour_add_file "${source_file}" "${target_flavour}" &&
+			_add_restow_if_active "${target_flavour}"
+		;;
+	"common")
+		check_dependencies
+		age_require_can_decrypt || exit 1
+		flavour_add_file "${source_file}" "common" &&
+			_add_restow_if_active "common"
+		;;
+	"regular" | "package")
+		# Empty package_name lets add_regular_file pick the default by path
+		# (~/.config -> config, ~/.local -> local, else home).
+		add_regular_file "${source_file}" "${package_name}"
+		;;
+	"")
+		check_dependencies
+		age_require_can_decrypt || exit 1
+		add_file_interactive "${source_file}"
+		;;
+	*)
+		error "Invalid add type: ${add_type}"
+		usage
+		exit 1
+		;;
+	esac
+
+	if [ -z "${DOT_DRY:-}" ] && [ -z "${DOT_UNA:-}" ]; then
+		echo ""
+		local commit_choice
+		user_yesno "Commit changes to git?" "y" commit_choice
+
+		if [ "${commit_choice}" -eq 1 ]; then
+			git -C "${DOTFILES_DIR}" add .
+			git -C "${DOTFILES_DIR}" commit -m "Add $(basename "${source_file}") to ${add_type:-dotfiles}"
+			info "Changes committed"
+		fi
+	fi
+}
+
+do_move() {
+	check_dependencies
+	age_require_can_decrypt || exit 1
+
+	local file="${1:-}"
+	local target_flavour="${2:-}"
+
+	if [ -z "${file}" ]; then
+		error "No file specified"
+		usage
+		exit 1
+	fi
+
+	if ! move_to_flavour "${file}" "${target_flavour}"; then
+		exit 1
+	fi
+
+	if [ -z "${DOT_DRY:-}" ]; then
+		info "Restowing..."
+		stow_packages -R
+	fi
+}
+
+do_copy() {
+	check_dependencies
+	age_require_can_decrypt || exit 1
+
+	local file="${1:-}"
+	local from_flavour="${2:-}"
+	local to_flavour="${3:-}"
+
+	if [ -z "${file}" ] || [ -z "${from_flavour}" ] || [ -z "${to_flavour}" ]; then
+		error "Usage: dotfiles copy <file> <from-flavour> <to-flavour>"
+		exit 1
+	fi
+
+	if ! copy_flavour_file "${file}" "${from_flavour}" "${to_flavour}"; then
+		exit 1
+	fi
+
+	if [ -z "${DOT_DRY:-}" ]; then
+		local current_flavour
+		flavour_get_current current_flavour
+		if [ "${to_flavour}" = "${current_flavour}" ] || [ "${to_flavour}" = "common" ]; then
+			info "Restowing..."
+			stow_packages -R
+		else
+			info "Copied into '${to_flavour}'. It will be applied when you switch to that flavour."
+		fi
+	fi
+}
+
+main() {
+	# shellcheck source=/dev/null
 	source "$__dir/.scripts/print.sh"
+	# shellcheck source=/dev/null
 	source "$__dir/.scripts/utils.sh"
+	# shellcheck source=/dev/null
+	source "$__dir/.scripts/age.sh"
+	# shellcheck source=/dev/null
+	source "$__dir/.scripts/flavours.sh"
+	# shellcheck source=/dev/null
+	source "$__dir/.scripts/add.sh"
 
 	OPTIND=1
 	OPTERR=0
-	while getopts "hnsu:" opt; do
+	while getopts "hnsup" opt; do
 		case "$opt" in
 		h)
-			show_help
+			usage
 			exit 0
 			;;
 		n)
@@ -112,17 +430,19 @@ function main() {
 		u)
 			DOT_UNA=1
 			;;
+		p)
+			DOT_FORCE_NO_ENCRYPT=1
+			;;
 		*)
 			usage
 			exit 1
 			;;
-
 		esac
 	done
 	shift $((OPTIND - 1))
 	[ "${1:-}" = "--" ] && shift
 
-	case "$@" in
+	case "${1:-}" in
 	install)
 		do_install
 		;;
@@ -135,14 +455,31 @@ function main() {
 	update)
 		do_update
 		;;
+	status)
+		do_status
+		;;
+	flavour)
+		do_flavour "${2:-}"
+		;;
+	reencrypt-all)
+		do_reencrypt_all
+		;;
+	add)
+		do_add "${2:-}" "${3:-}" "${4:-}"
+		;;
+	move)
+		do_move "${2:-}" "${3:-}"
+		;;
+	copy)
+		do_copy "${2:-}" "${3:-}" "${4:-}"
+		;;
 	*)
 		usage
 		exit 1
 		;;
-
 	esac
 
 	cleanup
 }
 
-main $@
+main "$@"

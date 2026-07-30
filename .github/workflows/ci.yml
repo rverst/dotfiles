@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age stow shellcheck bats
+
+      - name: Shellcheck
+        run: shellcheck -x dotfiles bootstrap .scripts/*.sh .githooks/pre-commit tests/*.bash
+
+      - name: Bats tests
+        run: bats tests/
