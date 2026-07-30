@@ -4,18 +4,18 @@ DOTCONFIG_FILE="${HOME}/.dotconfig"
 
 flavour_get_current() {
 	local result_var="${1:-}"
-	local flavour=""
+	local _flavour=""
 	if [ -f "${DOTCONFIG_FILE}" ]; then
-		flavour=$(git config -f "${DOTCONFIG_FILE}" --get core.flavour 2>/dev/null || true)
+		_flavour=$(git config -f "${DOTCONFIG_FILE}" --get core.flavour 2>/dev/null || true)
 	fi
-	if [ -z "${flavour}" ]; then
-		flavour="$(flavour_prompt_selection)"
-		[ -n "${flavour}" ] || return 1
+	if [ -z "${_flavour}" ]; then
+		_flavour="$(flavour_prompt_selection)"
+		[ -n "${_flavour}" ] || return 1
 	fi
 	if [ -n "${result_var}" ]; then
-		printf -v "${result_var}" "%s" "${flavour}"
+		printf -v "${result_var}" "%s" "${_flavour}"
 	else
-		echo "${flavour}"
+		echo "${_flavour}"
 	fi
 }
 
