@@ -8,6 +8,8 @@
 #    recipient set.
 # 3. Refuse the commit if any staged .age file cannot be decrypted on this
 #    machine (the canary against committing unreadable ciphertext).
+# 4. Scan the staged changes for plaintext secrets with gitleaks (if installed)
+#    so an unencrypted credential can't sneak into a regular stow package.
 #
 # Enabled via: git config core.hooksPath .githooks  (done by `dotfiles install`).
 set -o errexit
@@ -81,6 +83,30 @@ if [ "${failed}" -ne 0 ]; then
 	error "Aborting commit: one or more staged .age files are not readable on this machine."
 	error "Fix the recipient set / re-encrypt, then commit again."
 	exit 1
+fi
+
+# --- 4. Secret scan: block plaintext secrets from entering the repo --------
+# Real secrets live in .age ciphertext / gitignored decrypted-* workspaces
+# (allowlisted in .gitleaks.toml); this catches an unencrypted credential
+# accidentally staged into a regular package. Best-effort: skip with a warning
+# when gitleaks isn't installed so the hook still works everywhere.
+if command -v gitleaks >/dev/null 2>&1; then
+	# Newer gitleaks (v8.19+) scans staged changes via `gitleaks git --staged`;
+	# older releases use `gitleaks protect --staged`. Pick whichever this build
+	# understands so the hook works across versions.
+	scan_cmd="protect"
+	if gitleaks git --help >/dev/null 2>&1; then
+		scan_cmd="git"
+	fi
+	if ! gitleaks "${scan_cmd}" --staged --no-banner --redact \
+		--config "${DOTFILES_DIR}/.gitleaks.toml"; then
+		error "gitleaks found a potential secret in the staged changes (see above)."
+		error "If it's a real secret, encrypt it instead: dotfiles add <file> flavour"
+		error "If it's a false positive, allowlist it in .gitleaks.toml."
+		exit 1
+	fi
+else
+	warn "gitleaks not installed; skipping secret scan (brew install gitleaks)."
 fi
 
 exit 0

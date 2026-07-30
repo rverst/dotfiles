@@ -1,0 +1,32 @@
+# gitleaks configuration for this dotfiles repo.
+#
+# The pre-commit hook (.githooks/pre-commit) runs `gitleaks` over staged changes
+# to catch a plaintext secret accidentally staged into a regular stow package.
+#
+# This repo's *real* secrets never hit git in the clear: they live either in Age
+# ciphertext (`*.age`) or in gitignored `flavours/decrypted-*/` workspaces. Those
+# paths are allowlisted below so the scanner does not flag the content it is
+# specifically designed to protect.
+title = "dotfiles gitleaks config"
+
+[extend]
+# Start from gitleaks' built-in ruleset (AWS keys, GitHub/GitLab tokens, private
+# keys, generic high-entropy assignments, etc.) and only add allowlisting here.
+useDefault = true
+
+[allowlist]
+description = "Encrypted/generated files expected to contain high-entropy content"
+# Paths are matched against the repo-relative file path.
+paths = [
+  '''.*\.age$''',                  # Age ciphertext — intentionally encrypted secrets
+  '''\.age/recipients\.txt$''',    # public Age recipient keys (safe to commit)
+  '''\.age/master\.txt$''',        # public master recovery key (safe to commit)
+  '''flavours/decrypted-.*''',     # gitignored decrypted workspace (belt & suspenders)
+  '''apps/Brewfile\.lock\.json$''',
+]
+# age keypairs begin with the "AGE-SECRET-KEY-1..." / "age1..." prefixes; the
+# private halves are gitignored, but ignore the public recipient strings so they
+# never trip a generic high-entropy rule.
+regexes = [
+  '''age1[0-9a-z]{58}''',
+]
