@@ -1,0 +1,43 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+if (( $# != 1 )); then
+  print -u2 "Usage: tc <documents/<topic>/letters/file.typ>"
+  exit 64
+fi
+
+input=$1
+if [[ ! -f $input || $input != *.typ ]]; then
+  print -u2 "tc: expected an existing .typ file: $input"
+  exit 66
+fi
+
+input_dir=$(cd "${input:h}" && pwd)
+input_file=${input:t}
+input_path="$input_dir/$input_file"
+
+vault_root=$input_dir
+while [[ $vault_root != / && ! -d "$vault_root/documents/templates/assets" ]]; do
+  vault_root=${vault_root:h}
+done
+
+if [[ ! -d "$vault_root/documents/templates/assets" ]]; then
+  print -u2 "tc: could not find a vault root containing documents/templates/assets"
+  exit 69
+fi
+
+if [[ ${input_dir:t} != letters ]]; then
+  print -u2 "tc: input must be in a letters directory: $input_path"
+  exit 64
+fi
+
+output_dir="${input_dir:h}/output"
+output_path="$output_dir/${input_file:r}.pdf"
+mkdir -p "$output_dir"
+
+typst compile \
+  --root "$vault_root" \
+  --font-path "$vault_root/documents/templates/assets" \
+  "$input_path" \
+  "$output_path"
