@@ -20,6 +20,4 @@
 [alias]
 	logo = log --graph --all --oneline
 	ammend = commit --ammend --no-edit --allow-empty
-[user]
-	name = Robert Verst
-	email = github@verst.eu
+	wt = git-wt
