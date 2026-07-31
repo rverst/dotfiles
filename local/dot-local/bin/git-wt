@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")" || {
+    echo "fatal: not a git repository" >&2
+    exit 1
+}
+
+sanitize() {
+    echo "$1" | sed 's|/|_|g'
+}
+
+case "$cmd" in
+checkout | co)
+    branch="${1:?Usage: git wt checkout <branch>}"
+    path="../${repo}--$(sanitize "$branch")"
+
+    # 1. Local branch exists
+    if git show-ref --verify --quiet "refs/heads/$branch"; then
+        exec git worktree add "$path" "$branch"
+    fi
+
+    # 2. Check remotes (uses cached remote-tracking refs)
+    for remote in $(git remote); do
+        if git show-ref --verify --quiet "refs/remotes/$remote/$branch"; then
+            exec git worktree add -b "$branch" "$path" "$remote/$branch"
+        fi
+    done
+
+    # 3. Not found
+    echo "error: branch '$branch' not found locally or on any remote" >&2
+    exit 1
+    ;;
+new)
+    branch="${1:?Usage: git wt new <branch>}"
+    path="../${repo}--$(sanitize "$branch")"
+    exec git worktree add -b "$branch" "$path"
+    ;;
+rm)
+    branch="${1:?Usage: git wt rm <branch>}"
+    path="../${repo}--$(sanitize "$branch")"
+    git worktree remove "$path"
+    git worktree prune
+    ;;
+list | ls)
+    exec git worktree list
+    ;;
+prune)
+    exec git worktree prune
+    ;;
+help | --help | -h)
+    echo "Usage: git wt {checkout|new|rm|ls|prune} [branch]"
+    echo ""
+    echo "  checkout <b>   Create worktree at ../<repo>--<b> on existing branch"
+    echo "  new      <b>   Create worktree on a new branch"
+    echo "  rm       <b>   Remove worktree for branch and prune"
+    echo "  ls             List all worktrees"
+    echo "  prune          Prune stale worktree metadata"
+    ;;
+*)
+    echo "Unknown command: $cmd" >&2
+    echo "Usage: git wt {checkout|new|rm|ls|prune} [branch]" >&2
+    exit 1
+    ;;
+esac
