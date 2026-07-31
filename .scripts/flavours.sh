@@ -272,7 +272,7 @@ flavour_prepare_stow() {
 				# Create placeholder only if no decrypted file existed
 				cat >"${decrypted_name}" <<EOF
 # File: ${relative_path}
-# Could not decrypt on this machine. Ensure this machine's public key is in .age/recipients.txt,
+${AGE_PLACEHOLDER_LINE2}
 # then run 'dotfiles reencrypt-all' on a machine that can decrypt, and pull changes.
 EOF
 				warn "  ✗ Failed to decrypt ${relative_path} - placeholder created" >&2
@@ -310,6 +310,8 @@ flavour_encrypt_changes() {
 		[ -d "${DOTFILES_DIR}/flavours/common" ] && flavours+=("common")
 	fi
 
+	local placeholder_skipped=0
+
 	local flavour
 	for flavour in "${flavours[@]}"; do
 		local flavour_dir="${DOTFILES_DIR}/flavours/${flavour}"
@@ -318,7 +320,7 @@ flavour_encrypt_changes() {
 
 		info "Checking for changes in flavour '${flavour}'..."
 
-		find "${decrypted_dir}" -type f | while IFS= read -r decrypted_file; do
+		while IFS= read -r decrypted_file; do
 			local relative_path="${decrypted_file#${decrypted_dir}/}"
 			local encrypted_file="${flavour_dir}/${relative_path}.age"
 			local plain_file="${flavour_dir}/${relative_path}"
@@ -328,8 +330,17 @@ flavour_encrypt_changes() {
 				temp_file=$(mktemp)
 				if age_decrypt_file "${encrypted_file}" "${temp_file}"; then
 					if ! cmp -s "${decrypted_file}" "${temp_file}"; then
-						info "  Updating ${relative_path}.age"
-						age_encrypt_file "${decrypted_file}" "${encrypted_file}"
+						if age_is_placeholder_content "${decrypted_file}"; then
+							error "  ✗ Refusing to re-encrypt ${relative_path}: decrypted workspace"
+							error "    still holds the 'could not decrypt' placeholder. This machine"
+							error "    can now decrypt the real ${relative_path}.age but would overwrite"
+							error "    it with the placeholder. Delete the stale decrypted file so it"
+							error "    can be re-decrypted fresh, then retry."
+							placeholder_skipped=1
+						else
+							info "  Updating ${relative_path}.age"
+							age_encrypt_file "${decrypted_file}" "${encrypted_file}"
+						fi
 					fi
 				fi
 				rm -f "${temp_file}"
@@ -343,6 +354,8 @@ flavour_encrypt_changes() {
 				mkdir -p "$(dirname "${encrypted_file}")"
 				age_encrypt_file "${decrypted_file}" "${encrypted_file}"
 			fi
-		done
+		done < <(find "${decrypted_dir}" -type f)
 	done
+
+	[ "${placeholder_skipped}" -eq 0 ]
 }

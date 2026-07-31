@@ -258,7 +258,10 @@ do_status() {
 	info "Current flavour: $(flavour_get_current)"
 
 	age_require_can_decrypt || exit 1
-	flavour_encrypt_changes
+	if ! flavour_encrypt_changes; then
+		error "Refusing to continue: a decrypted workspace still holds an undecryptable placeholder (see above)."
+		exit 1
+	fi
 
 	echo ""
 	info "Git Status after encryption check:"
@@ -298,7 +301,10 @@ do_flavour() {
 	# Preserve any edits made in the outgoing flavour, then unstow its layer.
 	# Regular packages and the 'common' layer stay applied across the switch;
 	# the decrypted workspace is kept as the local source of truth.
-	flavour_encrypt_changes "${previous_flavour}"
+	if ! flavour_encrypt_changes "${previous_flavour}"; then
+		error "Refusing to switch flavour: a decrypted workspace in '${previous_flavour}' still holds an undecryptable placeholder (see above)."
+		exit 1
+	fi
 	if [ -d "${DOTFILES_DIR}/flavours/decrypted-${previous_flavour}" ]; then
 		info "Removing previous flavour layer: ${previous_flavour}"
 		local unstow_flags="--no-folding"

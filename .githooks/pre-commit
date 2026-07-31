@@ -45,7 +45,11 @@ for d in flavours/decrypted-*/; do
 	layers+=("${name#decrypted-}")
 done
 if [ ${#layers[@]} -gt 0 ]; then
-	flavour_encrypt_changes "${layers[@]}"
+	if ! flavour_encrypt_changes "${layers[@]}"; then
+		error "Aborting commit: a decrypted workspace still holds an undecryptable placeholder (see above)."
+		error "Fix it (dotfiles reencrypt-all from a machine that can decrypt, then pull) before committing."
+		exit 1
+	fi
 fi
 
 # --- 2. Re-encrypt all if the recipient set changed ------------------------
@@ -76,7 +80,15 @@ while IFS= read -r f; do
 	if ! age_can_decrypt_file "${f}"; then
 		error "Cannot decrypt staged file: ${f}"
 		failed=1
+		continue
 	fi
+	canary_tmp="$(mktemp)"
+	if age_decrypt_file "${f}" "${canary_tmp}" && age_is_placeholder_content "${canary_tmp}"; then
+		error "Staged file decrypts to the 'could not decrypt' placeholder: ${f}"
+		error "This would commit lost content. Recover the real content before committing."
+		failed=1
+	fi
+	rm -f "${canary_tmp}"
 done < <(git diff --cached --name-only --diff-filter=ACM)
 
 if [ "${failed}" -ne 0 ]; then

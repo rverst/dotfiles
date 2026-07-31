@@ -10,6 +10,12 @@ AGE_RECIPIENTS_FILE="${AGE_DIR}/recipients.txt"
 AGE_MASTER_PUB="${AGE_DIR}/master.txt"
 AGE_MASTER_KEY="${AGE_DIR}/master-key.txt"
 
+# Fixed second line of the placeholder flavour_prepare_stow writes when it
+# can't decrypt a file for this machine. age_is_placeholder_content() below
+# detects this exact line, so both must stay in sync - never hardcode this
+# text a third time.
+AGE_PLACEHOLDER_LINE2="# Could not decrypt on this machine. Ensure this machine's public key is in .age/recipients.txt,"
+
 # age_ensure_recipient <pubkey> <label>
 # Appends a recipient block only if the pubkey is not already present. This is
 # the dedupe primitive that prevents the same machine key being added twice.
@@ -175,6 +181,17 @@ age_decrypt_file() {
 	fi
 
 	age "${AGE_ID_ARGS[@]}" -d -o "${output_file}" "${input_file}"
+}
+
+# age_is_placeholder_content <file>
+# True if <file>'s content is the "could not decrypt on this machine"
+# placeholder flavour_prepare_stow writes when decryption fails for a machine.
+# Used to stop a transient decrypt failure from ever being promoted to real
+# content via re-encryption or commit.
+age_is_placeholder_content() {
+	local f="$1"
+	[ -f "${f}" ] || return 1
+	sed -n '2p' "${f}" | grep -qxF "${AGE_PLACEHOLDER_LINE2}"
 }
 
 # age_verify_roundtrip <plaintext_file> <encrypted_file>
