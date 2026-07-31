@@ -23,6 +23,10 @@ alias ldock="lazydocker"
 alias cl="claude"
 alias oc="opencode"
 
+if [ ! -z $(command -v clocker) ]; then
+	alias cl="clocker claude"
+fi
+
 # quick access to #EDITOR
 alias e="$EDITOR"
 alias ve="$VEDITOR"
