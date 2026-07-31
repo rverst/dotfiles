@@ -30,19 +30,26 @@ fi
 source "$ZINIT_HOME/zinit.zsh"
 
 # plugins load immediatly (needed for prompt/completions)
-zinit light zsh-users/zsh-syntax-highlighting
 zinit light zsh-users/zsh-completions
 zinit light zsh-users/zsh-autosuggestions
+zinit light zsh-users/zsh-syntax-highlighting
 zinit light Aloxaf/fzf-tab
 zinit snippet OMZP::ssh
+#zinit ice atinit'zstyle ":omz:plugins:sudo" keyring "^s"'
+#zinit snippet OMZ::plugins/sudo
 
 # snippets - defer heavy ones with turbo mode (load after shell is interactive)
-zinit ice wait licid; zinit snippet OMZP::git
-zinit ice wait licid; zinit snippet OMZP::aws
-zinit ice wait licid; zinit snippet OMZP::azure
-zinit ice wait licid; zinit snippet OMZP::command-not-found
-zinit ice wait licid; zinit snippet OMZP::kubectl
-zinit ice wait licid; zinit snippet OMZP::kubectx
+zinit ice wait lucid; zinit snippet OMZP::git
+zinit ice wait lucid; zinit snippet OMZP::command-not-found
+zinit ice wait lucid; zinit snippet OMZP::aws
+zinit ice wait lucid; zinit snippet OMZP::azure
+zinit ice wait lucid; zinit snippet OMZP::kubectl
+zinit ice wait lucid; zinit snippet OMZP::kubectx
+
+zinit light-mode for \
+    wait'0' lucid \
+    atinit'bindkey "^[[A" history-substring-search-up; bindkey "^[[B" history-substring-search-down' \
+    zsh-users/zsh-history-substring-search
 
 # load completions
 autoload -U compinit
