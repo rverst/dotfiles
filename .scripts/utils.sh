@@ -116,7 +116,11 @@ resolve_home_rel() {
 }
 
 setup_gitconfig() {
-	if [ -z "$(git config --global --get user.email 2>/dev/null || true)" ]; then
+	# --includes: git defaults include-following to OFF when a scope like
+	# --global is given, which would hide a user.email that lives in the
+	# stowed ~/.gitconfig.local (pulled in via `[include]` in ~/.gitconfig).
+	# Without it the installer re-prompts even though a local identity exists.
+	if [ -z "$(git config --global --includes --get user.email 2>/dev/null || true)" ]; then
 		info "Setting up ~/.gitconfig.local"
 		local local_config="$HOME/.gitconfig.local"
 
