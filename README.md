@@ -114,6 +114,7 @@ dotfiles               # the CLI (install/status/flavour/add/move/copy/...)
 .gitleaks.toml         # secret-scanner config (allowlists this repo's ciphertext)
 .age/                  # keys, recipients, master key
 apps/ config/ home/ local/ nvim/   # stow packages
+  local/dot-local/scripts/secret   # keyring-backed runtime secrets (see below)
 flavours/<name>/       # encrypted per-flavour payload (+ decrypted-<name>/ at runtime)
 tests/                 # bats suite
 ```
@@ -204,11 +205,131 @@ then commit/push so this machine's key becomes a recipient going forward.
 
 ---
 
+## Runtime secrets (`secret`)
+
+Age encryption protects *files at rest*. It does nothing for **runtime**
+secrets — API tokens a tool needs in its environment. Putting those in
+`~/.localrc` means two problems: they sit in cleartext on disk, and `export`
+hands them to **every** process the shell ever launches (any `npm` postinstall
+script, any random CLI). `secret` fixes both.
+
+`local/dot-local/scripts/secret` stores values in the OS keyring and injects
+them into **one** child process at a time. `~/.local/scripts` is already on
+`PATH`, so it works from zsh, bash, `.envrc`, a Makefile or a build script.
+
+```
+secret set <name>                 store a value (hidden prompt, never in argv/history)
+secret get <name>                 print a value to stdout
+secret rm <name>                  delete a value
+secret list                       list stored names (no values)
+secret run <NAME>... -- <cmd>...  run cmd with NAME exported, and nothing else
+secret sync <name> [item]         pull from Bitwarden/Vaultwarden into the keyring
+```
+
+Backends are auto-detected: `security(1)` on macOS (login keychain, already
+unlocked, no prompt), `secret-tool(1)` on Linux (needs **libsecret** —
+`libsecret-tools` on Debian/Ubuntu, `libsecret` on Arch/Fedora — plus a running
+keyring daemon). Server flavours have no keyring; `secret` errors cleanly there.
+
+`get` **fails loudly** when a secret is missing rather than printing an empty
+string, so you get a clear error instead of a confusing `401` from the far end.
+
+### Bitwarden / Vaultwarden as the source of truth
+
+The keyring is a fast local cache; the vault is where secrets are backed up and
+rotated. [`rbw`](https://git.tozt.net/rbw) (in the `Brewfile`) is used instead
+of the official `bw` because `bw` makes you keep a long-lived `BW_SESSION`
+token in your environment — exactly what this whole setup exists to avoid.
+`rbw-agent` caches the unlock, so you type the master password once per
+`lock_timeout`, not once per command.
+
+One-time setup on a new machine:
+```bash
+rbw config set base_url https://your-vaultwarden.example.com
+rbw config set email you@example.com
+rbw login
+secret sync GITLAB_TOKEN        # vault -> keyring
+```
+
+> A YubiKey/passkey **cannot** replace the master password for CLI unlock.
+> Bitwarden's YubiKey support is 2FA at login only; biometric/FIDO2 unlock is a
+> desktop-app and browser feature the CLI can't reach. The agent's cache is the
+> practical answer to prompt fatigue.
+
+### Using secrets
+
+**Transparent shell wrappers** — keep these at the **bottom** of `~/.localrc`,
+below its own `PATH` exports: the `$+commands` guards resolve at definition
+time, so a tool added to `PATH` later in the file wouldn't be seen.
+
+```zsh
+# wrap tools that need a token, without exporting it globally
+for _tool in glab gitlab-mr; do
+  (( $+commands[$_tool] )) && eval "
+    ${_tool}() { secret run GITLAB_TOKEN GITLAB_API_TOKEN -- command ${_tool} \"\$@\" }"
+done
+for _tool in npm npx; do
+  (( $+commands[$_tool] )) && eval "
+    ${_tool}() { secret run NPM_REGISTRY_TOKEN -- command ${_tool} \"\$@\" }"
+done
+for _tool in mvn mvnd; do
+  (( $+commands[$_tool] )) && eval "
+    ${_tool}() { secret run GITLAB_TOKEN -- command ${_tool} \"\$@\" }"
+done
+unset _tool
+```
+
+Config files then reference the variable instead of holding the secret:
+`~/.npmrc` → `:_authToken=${NPM_REGISTRY_TOKEN}`, `~/.m2/settings.xml` →
+`<value>${env.GITLAB_TOKEN}</value>`. Both files are then safe to adopt into a
+flavour.
+
+**Per-project via direnv** (already hooked in `.zshrc`). This is the more
+important mechanism — see the caveat below. The file holds only a *reference*,
+so it is safe to commit:
+```bash
+# ~/Dev/<work-tree>/.envrc
+export GITLAB_TOKEN="$(secret get GITLAB_TOKEN)"
+export NPM_REGISTRY_TOKEN="$(secret get NPM_REGISTRY_TOKEN)"
+```
+
+**Docker** — use BuildKit secrets. Never `--build-arg`: build args are baked
+into the image and visible in `docker history`.
+```dockerfile
+RUN --mount=type=secret,id=npmtoken \
+    NPM_REGISTRY_TOKEN="$(cat /run/secrets/npmtoken)" npm ci
+```
+```bash
+secret run NPM_REGISTRY_TOKEN -- docker build --secret id=npmtoken,env=NPM_REGISTRY_TOKEN .
+```
+Compose supports the same through `build.secrets`.
+
+### Known gap
+
+Shell wrappers only catch commands the **interactive shell** resolves. They do
+**not** cover `./mvnw` (invoked by path, so shell functions are bypassed),
+IDE-launched builds, or anything started from Spotlight/Dock. Since the
+templated `.npmrc`/`settings.xml` *require* the variable, those paths break.
+The `.envrc` at the work-tree root is the actual fix — it covers `./mvnw` and
+anything else run from a shell in that tree. For an IDE, launch it from inside
+the tree (`idea .`) so it inherits the environment, or set the variables in its
+run configuration.
+
+### Rotating a secret
+
+```bash
+rbw sync && secret sync GITLAB_TOKEN    # after rotating in the vault
+secret set GITLAB_TOKEN                 # or type the new value directly
+```
+Nothing else changes: no file to edit, no re-encryption, no commit.
+
+---
+
 ## Development
 
 ```bash
 bats tests/          # run the suite (sandboxed HOME/DOTFILES_DIR)
-shellcheck -x dotfiles bootstrap .scripts/*.sh .githooks/pre-commit tests/*.bash
+shellcheck -x dotfiles bootstrap .scripts/*.sh .githooks/pre-commit tests/*.bash local/dot-local/scripts/secret
 ```
 
 Notes:

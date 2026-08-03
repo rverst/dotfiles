@@ -52,6 +52,8 @@ Multi-machine flow: a new machine generates its own keypair and `age_init` adds 
 
 **Pre-commit hook.** `.githooks/pre-commit` (enabled by `dotfiles install` via `git config core.hooksPath .githooks`) re-encrypts edited decrypted workspaces, re-encrypts everything if the recipient set changed, and **blocks the commit if any staged `.age` is not decryptable on this machine** — so what you commit is always readable after a pull.
 
+**Runtime secrets** are deliberately *not* handled by Age. `local/dot-local/scripts/secret` (stowed to `~/.local/scripts`, already on `PATH`) stores API tokens in the OS keyring (`security` on macOS, `secret-tool`/libsecret on Linux; no backend on servers → clean error) and injects them into a single child process via `secret run NAME... -- cmd`, so they never sit in cleartext on disk nor get exported globally. `secret sync` pulls from Bitwarden/Vaultwarden through `rbw`. Config files reference the variable (`${NPM_REGISTRY_TOKEN}`, `${env.GITLAB_TOKEN}`) instead of embedding the value. Tool wrappers live at the bottom of `~/.localrc` (below its `PATH` exports, since `$+commands` guards resolve at definition time). See the README's "Runtime secrets" section, including the known gap around `./mvnw` and IDE-launched builds.
+
 **Submodules** (clone with `--recursive`): `nvim/dot-config/nvim` (Neovim config) and `config/dot-config/tmux/plugins/tpm` (tmux plugin manager).
 
 ## Gotchas
