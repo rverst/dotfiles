@@ -1,71 +1,193 @@
-""" Map leader to space
+""" ~/.ideavimrc — kept deliberately close to the Neovim config in
+""" nvim/dot-config/nvim (plugin/options.lua, plugin/keymap.lua, plugin/autocmd.lua).
+""" Where JetBrains has no equivalent the mapping is omitted rather than invented.
+
+""" Leader ---------------------------------------------------------------------
 let mapleader=" "
 
-""" Vim plugins
-
+""" Emulated plugins -----------------------------------------------------------
 " https://github.com/TheBlob42/idea-which-key
 set which-key
 set notimeout
-" set timeoutlen=5000
 
-""" Common settings
+" Replaces the `TextYankPost` autocmd + `vim.highlight.on_yank()`
+set highlightedyank
+let g:highlightedyank_highlight_duration = "150"
+
+" mini.surround / mini.ai equivalents
+set surround
+set argtextobj
+set textobj-entire
+set textobj-indent
+set matchit
+set ReplaceWithRegister
+set commentary
+set vim-paragraph-motion
+set NERDTree
+
+""" Options ---------------------------------------------------------------------
+set number relativenumber
+set ignorecase
+set smartcase
+set incsearch
 set hlsearch
+set scrolloff=10
+set sidescroll=5
+set sidescrolloff=5
+set showcmd
+set showmode
+set ruler
+set autoindent
 set clipboard=unnamedplus
 set clipboard^=ideaput
 
-set number relativenumber
-set smartcase
-set incsearch
-set ruler
-set autoindent
-set showcmd
-set showmode
-
-set scrolloff=5
-
-""" Idea settings
+""" Idea specific ----------------------------------------------------------------
 set ideajoin
+set ideamarks
+set idearefactormode=keep
+set ideastatusicon=gray
 
-""" Mappings
-map ]d <Action>(GotoNextError)
-map [d <Action>(GotoPreviousError)
-map gd <Action>(GotoDeclaration)
+" Let Vim own the window-navigation keys (see the <c-hjkl> maps below)
+sethandler <C-h> a:vim
+sethandler <C-j> a:vim
+sethandler <C-k> a:vim
+sethandler <C-l> a:vim
 
-map <leader>a <Action>(QuickActions)
-map <leader>f <Action>(QuickFixes)
-map <leader>g <Action>(Generate)
-map <leader>r <Action>(RenameElement)
-map <leader>s <Action>(SurroundWith)
-map <leader>R <Action>(RefactoringMenu)
-map <leader>b <Action>(GotoDeclaration)
-map <leader>c <Action>(CommentByLineComment)
-map <leader>C <Action>(CommentByBlockComment)
-map <leader>l <Action>(TUILauncher.LazyGit)
+""" Search highlight ------------------------------------------------------------
+" `<Esc>`/`<CR>` clear the search highlight, like `set('n', '<Esc>', '<cmd>nohlsearch<CR>')`
+nnoremap <Esc> :nohlsearch<CR>
+nnoremap <CR> :nohlsearch<CR>
 
-map W w<CR>
+""" Editing ---------------------------------------------------------------------
+" Quick indenting / outdenting
+nnoremap <TAB> >>
+nnoremap <S-TAB> <<
+vnoremap <TAB> >gv
+vnoremap <S-TAB> <gv
 
-map \r :action ReformatCode<CR>
-map \b :action ToggleLineBreakpoint<CR>
+" mini.surround style aliases on top of vim-surround
+nmap sa ys
+nmap sd ds
+nmap sr cs
+xmap sa S
 
-map \BB :action ToggleBookmark<CR>
-map \B0 :action ToggleBookmark0<CR>
-map \B1 :action ToggleBookmark1<CR>
-map \B2 :action ToggleBookmark2<CR>
-map \B3 :action ToggleBookmark3<CR>
-map \B4 :action ToggleBookmark4<CR>
-map \B5 :action ToggleBookmark5<CR>
-map \B6 :action ToggleBookmark6<CR>
-map \B7 :action ToggleBookmark7<CR>
-map \B8 :action ToggleBookmark8<CR>
-map \B9 :action ToggleBookmark9<CR>
+""" Window navigation ------------------------------------------------------------
+nnoremap <c-h> <c-w>h
+nnoremap <c-j> <c-w>j
+nnoremap <c-k> <c-w>k
+nnoremap <c-l> <c-w>l
 
-map \Gn :action GotoNextBookmark<CR>
-map \GN :action GotoPreviousBookmark<CR>
-map \G0 :action GotoBookmark0<CR>
-map \G1 :action GotoBookmark1<CR>
-map \G2 :action GotoBookmark2<CR>
-map \G3 :action GotoBookmark3<CR>
-map \G4 :action GotoBookmark4<CR>
-map \G5 :action GotoBookmark5<CR>
-map \G6 :action GotoBookmark6<CR>
-map \G7 :action GotoBookmark7<CR>
+" Resize splits — macOS option key produces these literal characters
+nnoremap ≤ <Action>(StretchSplitToLeft)
+nnoremap ≥ <Action>(StretchSplitToRight)
+nnoremap † <Action>(StretchSplitToTop)
+nnoremap ß <Action>(StretchSplitToBottom)
+
+" Move lines up/down <opt-j> / <opt-k>
+nnoremap ∆ <Action>(MoveLineDown)
+nnoremap ˚ <Action>(MoveLineUp)
+vnoremap ∆ <Action>(MoveStatementDown)
+vnoremap ˚ <Action>(MoveStatementUp)
+
+""" Diagnostics -------------------------------------------------------------------
+nmap ]d <Action>(GotoNextError)
+nmap [d <Action>(GotoPreviousError)
+nmap <F2> <Action>(GotoNextError)
+nmap <leader>e <Action>(ShowErrorDescription)
+
+" TODO comments (]t / [t / <F3> in Neovim)
+nmap ]t <Action>(NextOccurence)
+nmap [t <Action>(PreviousOccurence)
+
+""" LSP-ish navigation --------------------------------------------------------------
+nmap gd <Action>(GotoDeclaration)
+nmap gD <Action>(GotoTypeDeclaration)
+nmap gr <Action>(FindUsages)
+nmap gI <Action>(GotoImplementation)
+nmap K <Action>(QuickJavaDoc)
+
+""" Trees & panels -------------------------------------------------------------------
+" <F4> is Neo-tree in Neovim
+nmap <F4> <Action>(ActivateProjectToolWindow)
+" `-` opens the parent directory (oil.nvim)
+nmap - <Action>(SelectInProjectView)
+
+""" <leader>b — [B]uffer --------------------------------------------------------------
+nmap <leader>bd <Action>(CloseContent)
+nmap <leader>bo <Action>(CloseAllEditorsButActive)
+
+""" <leader>c — [C]ode ----------------------------------------------------------------
+nmap <leader>ca <Action>(ShowIntentionActions)
+nmap <leader>cr <Action>(RenameElement)
+nmap <leader>cR <Action>(RenameFile)
+nmap <leader>cf <Action>(ReformatCode)
+nmap <leader>cg <Action>(Generate)
+nmap <leader>cs <Action>(SurroundWith)
+nmap <leader>cq <Action>(QuickFixes)
+nmap <leader>cx <Action>(RefactoringMenu)
+nmap <leader>co <Action>(OptimizeImports)
+
+""" <leader>d — [D]ebug ---------------------------------------------------------------
+nmap <leader>db <Action>(ToggleLineBreakpoint)
+nmap <leader>dB <Action>(AddConditionalBreakpoint)
+nmap <leader>dc <Action>(Resume)
+nmap <leader>di <Action>(StepInto)
+nmap <leader>do <Action>(StepOver)
+nmap <leader>dO <Action>(StepOut)
+nmap <leader>dt <Action>(Debug)
+nmap <leader>dr <Action>(ActivateDebugToolWindow)
+nmap <leader>dx <Action>(ViewBreakpoints)
+
+""" <leader>f — [F]ind -----------------------------------------------------------------
+nmap <leader>ff <Action>(GotoFile)
+nmap <leader>fg <Action>(FindInPath)
+nmap <leader>fw <Action>(FindWordAtCaret)
+nmap <leader>fd <Action>(ActivateProblemsViewToolWindow)
+nmap <leader>fk <Action>(GotoAction)
+nmap <leader>fs <Action>(GotoSymbol)
+nmap <leader>fc <Action>(GotoClass)
+nmap <leader>fr <Action>(RecentChangedFiles)
+nmap <leader>f. <Action>(RecentFiles)
+nmap <leader><leader> <Action>(RecentFiles)
+nmap <leader>/ <Action>(Find)
+
+""" <leader>g — [G]it -------------------------------------------------------------------
+nmap <leader>gg <Action>(TUILauncher.LazyGit)
+nmap <leader>gb <Action>(Annotate)
+nmap <leader>gB <Action>(Github.Open.In.Browser)
+nmap <leader>gl <Action>(Vcs.Show.Log)
+nmap <leader>gf <Action>(Vcs.ShowHistoryForBlock)
+nmap <leader>gp <Action>(VcsShowCurrentChangeMarker)
+nmap <leader>gr <Action>(Vcs.RollbackChangedLines)
+nmap <leader>gs <Action>(ChangesView.Commit)
+nmap ]g <Action>(VcsShowNextChangeMarker)
+nmap [g <Action>(VcsShowPrevChangeMarker)
+
+""" <leader>h — [H]arpoon (bookmarks) ------------------------------------------------------
+nmap <leader>hm <Action>(ToggleBookmark)
+nmap <leader>hl <Action>(ActivateBookmarksToolWindow)
+nmap <leader>hh <Action>(ShowBookmarks)
+nmap <leader>hn <Action>(GotoNextBookmark)
+nmap <leader>hp <Action>(GotoPreviousBookmark)
+nmap <leader>1 <Action>(GotoBookmark1)
+nmap <leader>2 <Action>(GotoBookmark2)
+nmap <leader>3 <Action>(GotoBookmark3)
+nmap <leader>4 <Action>(GotoBookmark4)
+nmap <leader>5 <Action>(GotoBookmark5)
+
+""" <leader>u — [U]tils ----------------------------------------------------------------------
+nmap <leader>un <Action>(ClearAllNotifications)
+nmap <leader>n <Action>(ActivateNotificationsToolWindow)
+nmap <leader>z <Action>(ToggleZenMode)
+nmap <leader>Z <Action>(ToggleDistractionFreeMode)
+nmap <leader>ut <Action>(ActivateTerminalToolWindow)
+nmap <leader>q <Action>(ActivateProblemsViewToolWindow)
+
+""" Which-key group descriptions ---------------------------------------------------------------
+let g:WhichKeyDesc_buffer = "<leader>b [B]uffer"
+let g:WhichKeyDesc_code = "<leader>c [C]ode"
+let g:WhichKeyDesc_debug = "<leader>d [D]ebug"
+let g:WhichKeyDesc_find = "<leader>f [F]ind"
+let g:WhichKeyDesc_git = "<leader>g [G]it"
+let g:WhichKeyDesc_harpoon = "<leader>h [H]arpoon"
+let g:WhichKeyDesc_utils = "<leader>u [U]tils"
