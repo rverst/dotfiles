@@ -45,8 +45,10 @@ alias tms="tmux-sessionizer"
 
 if [ "$(uname -s)" = "Linux" ]; then
 	alias rm="rm -vI"
+	alias netlis="netstat -tulpn"
 elif [ "$(uname -s)" = "Darwin" ]; then
-	alias rm="rm -v"
+	alias rm='trash'          # goes to macOS Trash, undeletable-by-accident (brew install trash)
+	alias rrm='command rm -v' # if you really mean it :-)
 	alias netlis="netstat -p tcp -van | grep LISTEN"
 fi
 
