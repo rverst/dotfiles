@@ -39,17 +39,23 @@ zinit snippet OMZP::ssh
 #zinit snippet OMZ::plugins/sudo
 
 # snippets - defer heavy ones with turbo mode (load after shell is interactive)
-zinit ice wait lucid; zinit snippet OMZP::git
-zinit ice wait lucid; zinit snippet OMZP::command-not-found
-zinit ice wait lucid; zinit snippet OMZP::aws
-zinit ice wait lucid; zinit snippet OMZP::azure
-zinit ice wait lucid; zinit snippet OMZP::kubectl
-zinit ice wait lucid; zinit snippet OMZP::kubectx
+zinit ice wait lucid
+zinit snippet OMZP::git
+zinit ice wait lucid
+zinit snippet OMZP::command-not-found
+zinit ice wait lucid
+zinit snippet OMZP::aws
+zinit ice wait lucid
+zinit snippet OMZP::azure
+zinit ice wait lucid
+zinit snippet OMZP::kubectl
+zinit ice wait lucid
+zinit snippet OMZP::kubectx
 
 zinit light-mode for \
-    wait'0' lucid \
-    atinit'bindkey "^[[A" history-substring-search-up; bindkey "^[[B" history-substring-search-down' \
-    zsh-users/zsh-history-substring-search
+  wait'0' lucid \
+  atinit'bindkey "^[[A" history-substring-search-up; bindkey "^[[B" history-substring-search-down' \
+  zsh-users/zsh-history-substring-search
 
 # load completions
 autoload -U compinit
@@ -124,18 +130,18 @@ if [ -f /opt/homebrew/bin/brew ]; then
   _brew_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/brew-shellenv.zsh"
   if [[ ! -f "$_brew_cache" || /opt/homebrew/bin/brew -nt "$_brew_cache" ]]; then
     mkdir -p "${_brew_cache:h}"
-    /opt/homebrew/bin/brew shellenv >| "$_brew_cache"
+    /opt/homebrew/bin/brew shellenv >|"$_brew_cache"
   fi
   source "$_brew_cache"
   unset _brew_cache
 fi
 
 # fzf shell integration - cache to avoid subprocess on every shell start
-if (( $+commands[fzf] )); then
+if (($+commands[fzf])); then
   _fzf_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/fzf-init.zsh"
   if [[ ! -f "$_fzf_cache" || $(command -v fzf) -nt "$_fzf_cache" ]]; then
     mkdir -p "${_fzf_cache:h}"
-    fzf --zsh >| "$_fzf_cache"
+    fzf --zsh >|"$_fzf_cache"
   fi
   source "$_fzf_cache"
   unset _fzf_cache
@@ -146,11 +152,11 @@ else
 fi
 
 # zoxide integration - cache to avoid subprocess on every shell start
-if (( $+commands[zoxide] )); then
+if (($+commands[zoxide])); then
   _zoxide_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zoxide-init.zsh"
   if [[ ! -f "$_zoxide_cache" || $(command -v zoxide) -nt "$_zoxide_cache" ]]; then
     mkdir -p "${_zoxide_cache:h}"
-    zoxide init --cmd cd zsh >| "$_zoxide_cache"
+    zoxide init --cmd cd zsh >|"$_zoxide_cache"
   fi
   source "$_zoxide_cache"
   unset _zoxide_cache
@@ -165,30 +171,30 @@ fi
 [ -f "$HOME/.localrc" ] && . "$HOME/.localrc"
 
 # prompt - cache oh-my-posh init to avoid subprocess on every shell start
-if [ "$TERM_PROGRAM" != "Apple_Terminal" ] && (( $+commands[oh-my-posh] )); then
+if [ "$TERM_PROGRAM" != "Apple_Terminal" ] && command -v oh-my-posh >/dev/null; then
   _omp_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/oh-my-posh-init.zsh"
   _omp_config="$XDG_CONFIG_HOME/oh-my-posh/mytheme.omp.yaml"
   if [[ ! -f "$_omp_cache" || "$_omp_config" -nt "$_omp_cache" || $(command -v oh-my-posh) -nt "$_omp_cache" ]]; then
     mkdir -p "${_omp_cache:h}"
-    oh-my-posh init zsh --config "$_omp_config" >| "$_omp_cache"
+    oh-my-posh init zsh --config "$_omp_config" >|"$_omp_cache"
   fi
   source "$_omp_cache"
   unset _omp_cache _omp_config
 fi
 
 # direnv integration - cache to avoid subprocess on every shell start
-if (( $+commands[direnv] )); then
+if (($+commands[direnv])); then
   _direnv_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/direnv-init.zsh"
   if [[ ! -f "$_direnv_cache" || $(command -v direnv) -nt "$_direnv_cache" ]]; then
     mkdir -p "${_direnv_cache:h}"
-    direnv hook zsh >| "$_direnv_cache"
+    direnv hook zsh >|"$_direnv_cache"
   fi
   source "$_direnv_cache"
   unset _direnv_cache
 fi
 
 # rbenv - lazy load: only init when ruby/rbenv/gem/bundle is actually called
-if (( $+commands[rbenv] )); then
+if (($+commands[rbenv])); then
   rbenv() {
     unfunction rbenv
     eval "$(command rbenv init - --no-rehash zsh)"
