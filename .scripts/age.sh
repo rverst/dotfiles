@@ -180,7 +180,16 @@ age_decrypt_file() {
 		return 1
 	fi
 
-	age "${AGE_ID_ARGS[@]}" -d -o "${output_file}" "${input_file}"
+	age "${AGE_ID_ARGS[@]}" -d -o "${output_file}" "${input_file}" || return 1
+
+	# age carries no file mode, so a decrypted script would come back 0644 and
+	# fail to run (this bit us with dot-local/scripts/connect_ssh_proxy).
+	# Restore the executable bit for anything that looks like a script.
+	if [ -s "${output_file}" ] && head -c 2 "${output_file}" | grep -q '^#!'; then
+		chmod +x "${output_file}"
+	fi
+
+	return 0
 }
 
 # age_is_placeholder_content <file>
