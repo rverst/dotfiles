@@ -223,7 +223,9 @@ secret get <name>                 print a value to stdout
 secret rm <name>                  delete a value
 secret list                       list stored names (no values)
 secret run <NAME>... -- <cmd>...  run cmd with NAME exported, and nothing else
-secret sync <name> [item]         pull from Bitwarden/Vaultwarden into the keyring
+secret sync <name> [item]         pull one value from the vault into the keyring
+secret sync --all                 pull every item of the vault folder
+secret sync --list                list vault item names (no values)
 ```
 
 Backends are auto-detected: `security(1)` on macOS (login keychain, already
@@ -264,32 +266,103 @@ Notes:
   distro and native Windows tooling. Usually what you want.
 - `Authentication None` trades the unlock prompt for DPAPI-only protection at
   rest. Reasonable on a single-user laptop; a conscious tradeoff, not an oversight.
-- `secret sync` needs no special handling — `rbw` runs natively inside WSL, and
-  only the store step crosses the boundary.
+- `secret sync` needs no special handling — `rbw` and `keepassxc-cli` run
+  natively inside WSL, and only the store step crosses the boundary.
 - If `secret` can't find `pwsh.exe`, check `appendWindowsPath` in `/etc/wsl.conf`;
   the default install location is probed as a fallback.
 
-### Bitwarden / Vaultwarden as the source of truth
+### The vault as the source of truth
 
-The keyring is a fast local cache; the vault is where secrets are backed up and
-rotated. [`rbw`](https://git.tozt.net/rbw) (in the `Brewfile`) is used instead
-of the official `bw` because `bw` makes you keep a long-lived `BW_SESSION`
-token in your environment — exactly what this whole setup exists to avoid.
-`rbw-agent` caches the unlock, so you type the master password once per
-`lock_timeout`, not once per command.
+The keyring is a fast local cache; the **vault** is where secrets are backed up
+and rotated. Two vault backends are supported, and `secret sync` treats them
+identically:
 
-One-time setup on a new machine:
+| backend | tool | good for |
+| --- | --- | --- |
+| `rbw` | [`rbw`](https://git.tozt.net/rbw) | Bitwarden / Vaultwarden (a server you or someone else hosts) |
+| `keepassxc` | `keepassxc-cli` | a local `.kdbx` file — no server, syncs over whatever you already use |
+
+Detection order: `SECRET_VAULT` if set → a configured `SECRET_KEEPASS_DB` with
+`keepassxc-cli` present → `rbw` → `keepassxc-cli`. So on a machine with both,
+pointing `SECRET_KEEPASS_DB` at a database is enough to choose KeePass, and
+`SECRET_VAULT=rbw` overrides even that.
+
+#### Vault layout
+
+One convention for both backends:
+
+- a **folder** (Bitwarden) / **group** (KeePass) named `dotfiles` —
+  override with `SECRET_VAULT_FOLDER`;
+- **one item per secret**, the item name being exactly the secret name
+  (`GITLAB_TOKEN`, `NPM_REGISTRY_TOKEN`);
+- the value in the **password** field — override with `SECRET_VAULT_FIELD`.
+
+```
+dotfiles/
+├── GITLAB_TOKEN        password: glpat-…
+├── NPM_REGISTRY_TOKEN  password: npm_…
+└── OPENAI_API_KEY      password: sk-…
+```
+
+That is what makes `secret sync --all` work: it enumerates the folder and pulls
+everything in one unlock. Items whose name isn't a valid secret name (spaces,
+`/`, a regular login you parked there) are **skipped with a warning**, not a
+failure — including anything in a nested group, so keep the layout flat. Items
+with a name that differs from the variable still work the old way:
+`secret sync MY_TOKEN some-oddly-named-item`.
+
+#### Bitwarden / Vaultwarden (`rbw`)
+
+`rbw` (in the `Brewfile`) is used instead of the official `bw` because `bw`
+makes you keep a long-lived `BW_SESSION` token in your environment — exactly
+what this whole setup exists to avoid. `rbw-agent` caches the unlock, so you
+type the master password once per `lock_timeout`, not once per command.
+
 ```bash
 rbw config set base_url https://your-vaultwarden.example.com
 rbw config set email you@example.com
 rbw login
-secret sync GITLAB_TOKEN        # vault -> keyring
+secret sync --all               # vault folder -> keyring
 ```
 
 > A YubiKey/passkey **cannot** replace the master password for CLI unlock.
 > Bitwarden's YubiKey support is 2FA at login only; biometric/FIDO2 unlock is a
 > desktop-app and browser feature the CLI can't reach. The agent's cache is the
 > practical answer to prompt fatigue.
+
+#### KeePassXC (`keepassxc-cli`)
+
+No server, no account: a single `.kdbx` file you sync however you like.
+`keepassxc-cli` ships with the KeePassXC app (`brew install --cask keepassxc`,
+`apt install keepassxc`); it is deliberately **not** in the `Brewfile`, since
+it's a per-machine choice.
+
+Configure it with environment variables at the bottom of `~/.localrc` (which is
+per-flavour and encrypted, so it's the right place):
+
+```bash
+export SECRET_KEEPASS_DB="$HOME/Sync/passwords.kdbx"
+# optional:
+export SECRET_KEEPASS_KEYFILE="$HOME/.config/keepass/key"
+export SECRET_KEEPASS_YUBIKEY=1              # or 1:7370001
+export SECRET_KEEPASS_NO_PASSWORD=1          # key-file / YubiKey-only database
+export SECRET_VAULT_FOLDER=dotfiles          # the group inside the database
+```
+
+```bash
+secret sync --list              # what's in the group
+secret sync --all               # group -> keyring
+```
+
+The passphrase is read **once per run** from a hidden prompt and handed to each
+`keepassxc-cli` call on **stdin** — never in argv, so it never shows up in `ps`.
+It is also accepted on stdin non-interactively (`printf '%s\n' "$pw" | secret
+sync --all`), which is how the test suite drives it.
+
+Two honest caveats: KeePassXC has **no agent**, so every item costs one full
+KDF derivation — `sync --all` over a high-round database takes a few seconds
+per item. And there is nothing like `rbw sync`: the `.kdbx` is only as fresh as
+whatever file sync you put under it.
 
 ### Using secrets
 
@@ -353,7 +426,9 @@ run configuration.
 ### Rotating a secret
 
 ```bash
-rbw sync && secret sync GITLAB_TOKEN    # after rotating in the vault
+rbw sync && secret sync GITLAB_TOKEN    # Bitwarden, after rotating in the vault
+secret sync GITLAB_TOKEN                # KeePass, after saving the .kdbx
+secret sync --all                       # or just re-pull everything
 secret set GITLAB_TOKEN                 # or type the new value directly
 ```
 Nothing else changes: no file to edit, no re-encryption, no commit.

@@ -20,6 +20,14 @@ setup() {
 
 	export STUB_BIN="${TEST_TMP}/bin"
 	mkdir -p "${STUB_BIN}"
+
+	# Vault stub state. Exported so the stubs (separate processes) see it.
+	export STUB_VAULT_INDEX="${TEST_TMP}/vault-index"
+	export STUB_VAULT_EMPTY="${TEST_TMP}/vault-empty"
+	export STUB_KDBX="${TEST_TMP}/vault.kdbx"
+	export STUB_KP_LOG="${TEST_TMP}/kp-argv"
+	export STUB_KP_STDIN="${TEST_TMP}/kp-stdin"
+
 	_install_security_stub
 	_install_pwsh_stub
 	PATH="${STUB_BIN}:${PATH}"
@@ -165,6 +173,92 @@ _seed() {
 	printf 'dotfiles:%s\t%s\n' "$1" "$2" >>"${STUB_STORE}"
 }
 
+# A minimal rbw(1). The folder index (one "folder<TAB>name" line per item)
+# backs `list`; `get` echoes a value that encodes the folder and item it was
+# asked for, so a test can assert the lookup was actually scoped.
+_install_rbw_stub() {
+	printf 'dotfiles\tMY_TOKEN\ndotfiles\tOTHER_TOKEN\nother\tELSEWHERE\n' \
+		>"${STUB_VAULT_INDEX}"
+	: >"${STUB_VAULT_EMPTY}"
+
+	cat >"${STUB_BIN}/rbw" <<-'STUB'
+		#!/usr/bin/env bash
+		set -o nounset
+
+		case "$1" in
+		unlocked) exit 0 ;;
+		unlock) exit 0 ;;
+		list)
+			cat "${STUB_VAULT_INDEX}"
+			;;
+		get)
+			shift
+			folder=""
+			item=""
+			while [ $# -gt 0 ]; do
+				case "$1" in
+				--folder) folder="$2"; shift 2 ;;
+				--field) shift 2 ;;
+				*) item="$1"; shift ;;
+				esac
+			done
+			[ "${item}" = "MISSING" ] && exit 1
+			grep -qxF "${item}" "${STUB_VAULT_EMPTY}" && exit 0
+			printf 'from-vault:%s/%s\n' "${folder}" "${item}"
+			;;
+		*) exit 1 ;;
+		esac
+	STUB
+	chmod +x "${STUB_BIN}/rbw"
+}
+
+# A minimal keepassxc-cli. It logs its argv (pipe separated) and appends its
+# stdin, so tests can assert that the passphrase travels on stdin only and that
+# the flags are built correctly.
+_install_keepassxc_stub() {
+	: >"${STUB_KDBX}"
+	: >"${STUB_KP_LOG}"
+	: >"${STUB_KP_STDIN}"
+
+	cat >"${STUB_BIN}/keepassxc-cli" <<-'STUB'
+		#!/usr/bin/env bash
+		set -o nounset
+
+		printf '%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${STUB_KP_LOG}"
+
+		if [ ! -t 0 ]; then
+			# Consume at most the passphrase line; the real CLI does the same.
+			IFS= read -r pass || pass=""
+			[ -n "${pass}" ] && printf '%s\n' "${pass}" >>"${STUB_KP_STDIN}"
+		fi
+
+		cmd="$1"; shift
+		args=()
+		while [ $# -gt 0 ]; do
+			case "$1" in
+			-q | -s | --no-password | -R | -f) shift ;;
+			-a | -k | -y) shift 2 ;;
+			*) args+=("$1"); shift ;;
+			esac
+		done
+
+		case "${cmd}" in
+		show)
+			entry="${args[1]}"
+			case "${entry}" in
+			*/MY_TOKEN | */OTHER_TOKEN) printf 'from-kdbx:%s\n' "${entry}" ;;
+			*) printf 'Could not find entry with path %s.\n' "${entry}" >&2; exit 1 ;;
+			esac
+			;;
+		ls)
+			printf 'MY_TOKEN\nsubgroup/\nOTHER_TOKEN\n'
+			;;
+		*) exit 1 ;;
+		esac
+	STUB
+	chmod +x "${STUB_BIN}/keepassxc-cli"
+}
+
 @test "set stores a value read from stdin, get reads it back" {
 	run bash "${SECRET}" set MY_TOKEN <<<"s3cr3t"
 	[ "$status" -eq 0 ]
@@ -295,28 +389,243 @@ _seed() {
 	[[ "$output" == *"no command given"* ]]
 }
 
-@test "sync fails with a clear hint when rbw is absent" {
-	# Shadow rbw with nothing: PATH here contains only the stub dir + coreutils.
+@test "sync fails with a clear hint when no vault backend is present" {
+	# Shadow rbw/keepassxc-cli with nothing: PATH here contains only the stub
+	# dir + coreutils.
 	run env PATH="${STUB_BIN}:/usr/bin:/bin" bash "${SECRET}" sync MY_TOKEN
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"rbw not installed"* ]]
+	[[ "$output" == *"no vault backend available"* ]]
 }
 
 @test "sync stores the value rbw returns" {
-	cat >"${STUB_BIN}/rbw" <<-'STUB'
-		#!/usr/bin/env bash
-		case "$1" in
-		unlocked) exit 0 ;;
-		get) printf 'from-vault\n' ;;
-		esac
-	STUB
-	chmod +x "${STUB_BIN}/rbw"
+	_install_rbw_stub
 
 	run bash "${SECRET}" sync MY_TOKEN
 	[ "$status" -eq 0 ]
 
 	run bash "${SECRET}" get MY_TOKEN
-	[ "$output" = "from-vault" ]
+	[ "$output" = "from-vault:dotfiles/MY_TOKEN" ]
+}
+
+@test "sync scopes the rbw lookup to the vault folder" {
+	_install_rbw_stub
+
+	SECRET_VAULT_FOLDER=work run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -eq 0 ]
+
+	run bash "${SECRET}" get MY_TOKEN
+	[ "$output" = "from-vault:work/MY_TOKEN" ]
+}
+
+@test "sync accepts an explicit item name that differs from the secret name" {
+	_install_rbw_stub
+
+	run bash "${SECRET}" sync MY_TOKEN gitlab-pat
+	[ "$status" -eq 0 ]
+
+	run bash "${SECRET}" get MY_TOKEN
+	[ "$output" = "from-vault:dotfiles/gitlab-pat" ]
+}
+
+@test "sync --list prints the folder's item names" {
+	_install_rbw_stub
+
+	run bash "${SECRET}" sync --list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"MY_TOKEN"* ]]
+	[[ "$output" == *"OTHER_TOKEN"* ]]
+	# An item in another folder must not show up.
+	[[ "$output" != *"ELSEWHERE"* ]]
+}
+
+@test "sync --all pulls every item of the folder" {
+	_install_rbw_stub
+
+	run bash "${SECRET}" sync --all
+	[ "$status" -eq 0 ]
+
+	run bash "${SECRET}" get MY_TOKEN
+	[ "$output" = "from-vault:dotfiles/MY_TOKEN" ]
+
+	run bash "${SECRET}" get OTHER_TOKEN
+	[ "$output" = "from-vault:dotfiles/OTHER_TOKEN" ]
+
+	run bash "${SECRET}" get ELSEWHERE
+	[ "$status" -ne 0 ]
+}
+
+@test "sync --all skips items that are not valid secret names, and empty ones" {
+	_install_rbw_stub
+
+	printf 'dotfiles\tsome login\n' >>"${STUB_VAULT_INDEX}"
+	printf 'dotfiles\tEMPTY_ONE\n' >>"${STUB_VAULT_INDEX}"
+	printf 'EMPTY_ONE\n' >"${STUB_VAULT_EMPTY}"
+
+	run bash "${SECRET}" sync --all
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"skipping vault item some login"* ]]
+	[[ "$output" == *"skipping vault item EMPTY_ONE"* ]]
+	[[ "$output" == *"synced 2 of 4"* ]]
+}
+
+@test "sync --all takes no further arguments" {
+	_install_rbw_stub
+
+	run bash "${SECRET}" sync --all MY_TOKEN
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"takes no further arguments"* ]]
+}
+
+@test "sync rejects an unknown option" {
+	_install_rbw_stub
+
+	run bash "${SECRET}" sync --frobnicate
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"unknown option"* ]]
+}
+
+@test "sync fails clearly on a missing vault item" {
+	_install_rbw_stub
+
+	run bash "${SECRET}" sync MISSING
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"no vault item 'MISSING'"* ]]
+}
+
+# --- vault backend selection ------------------------------------------------
+
+@test "SECRET_VAULT rejects an unknown backend" {
+	_install_rbw_stub
+
+	SECRET_VAULT=1password run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"unknown SECRET_VAULT"* ]]
+}
+
+@test "an explicitly configured keepass database wins over an installed rbw" {
+	_install_rbw_stub
+	_install_keepassxc_stub
+
+	SECRET_KEEPASS_DB="${STUB_KDBX}" \
+		SECRET_KEEPASS_NO_PASSWORD=1 \
+		run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -eq 0 ]
+
+	run bash "${SECRET}" get MY_TOKEN
+	[ "$output" = "from-kdbx:/dotfiles/MY_TOKEN" ]
+}
+
+@test "SECRET_VAULT=rbw wins over a configured keepass database" {
+	_install_rbw_stub
+	_install_keepassxc_stub
+
+	SECRET_VAULT=rbw SECRET_KEEPASS_DB="${STUB_KDBX}" \
+		run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -eq 0 ]
+
+	run bash "${SECRET}" get MY_TOKEN
+	[ "$output" = "from-vault:dotfiles/MY_TOKEN" ]
+}
+
+# --- keepassxc vault backend ------------------------------------------------
+
+@test "keepass sync requires SECRET_KEEPASS_DB" {
+	_install_keepassxc_stub
+
+	SECRET_VAULT=keepassxc run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"SECRET_KEEPASS_DB is not set"* ]]
+}
+
+@test "keepass sync rejects a database path that does not exist" {
+	_install_keepassxc_stub
+
+	SECRET_VAULT=keepassxc SECRET_KEEPASS_DB="${TEST_TMP}/nope.kdbx" \
+		run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"does not exist"* ]]
+}
+
+@test "keepass sync reads the password field of the folder entry" {
+	_install_keepassxc_stub
+
+	SECRET_VAULT=keepassxc SECRET_KEEPASS_DB="${STUB_KDBX}" \
+		SECRET_KEEPASS_NO_PASSWORD=1 \
+		run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -eq 0 ]
+
+	run bash "${SECRET}" get MY_TOKEN
+	[ "$output" = "from-kdbx:/dotfiles/MY_TOKEN" ]
+
+	# -q (quiet) and -s (show protected) must both be passed, or the value
+	# would come back masked or polluted with prompt text.
+	run cat "${STUB_KP_LOG}"
+	[[ "$output" == "show|"* ]]
+	[[ "$output" == *"|-q|"* ]]
+	[[ "$output" == *"|-s|"* ]]
+	[[ "$output" == *"|-a|Password|"* ]]
+	[[ "$output" == *"|/dotfiles/MY_TOKEN"* ]]
+}
+
+@test "keepass passes the key file and yubikey flags through" {
+	_install_keepassxc_stub
+	: >"${TEST_TMP}/key"
+
+	SECRET_VAULT=keepassxc SECRET_KEEPASS_DB="${STUB_KDBX}" \
+		SECRET_KEEPASS_KEYFILE="${TEST_TMP}/key" \
+		SECRET_KEEPASS_YUBIKEY=1:7370001 \
+		SECRET_KEEPASS_NO_PASSWORD=1 \
+		run bash "${SECRET}" sync MY_TOKEN
+	[ "$status" -eq 0 ]
+
+	run cat "${STUB_KP_LOG}"
+	[[ "$output" == *"-k|${TEST_TMP}/key"* ]]
+	[[ "$output" == *"-y|1:7370001"* ]]
+	[[ "$output" == *"--no-password"* ]]
+}
+
+@test "keepass takes the passphrase on stdin, never in argv" {
+	_install_keepassxc_stub
+
+	SECRET_VAULT=keepassxc SECRET_KEEPASS_DB="${STUB_KDBX}" \
+		run bash -c "printf 'hunter2\n' | bash '${SECRET}' sync MY_TOKEN"
+	[ "$status" -eq 0 ]
+
+	run cat "${STUB_KP_LOG}"
+	[[ "$output" != *"hunter2"* ]]
+
+	run cat "${STUB_KP_STDIN}"
+	[ "$output" = "hunter2" ]
+}
+
+@test "keepass prompts for the passphrase only once for sync --all" {
+	_install_keepassxc_stub
+
+	SECRET_VAULT=keepassxc SECRET_KEEPASS_DB="${STUB_KDBX}" \
+		run bash -c "printf 'hunter2\n' | bash '${SECRET}' sync --all"
+	[ "$status" -eq 0 ]
+
+	run bash "${SECRET}" get MY_TOKEN
+	[ "$output" = "from-kdbx:/dotfiles/MY_TOKEN" ]
+	run bash "${SECRET}" get OTHER_TOKEN
+	[ "$output" = "from-kdbx:/dotfiles/OTHER_TOKEN" ]
+
+	# One `ls` plus two `show` calls, all with the same passphrase, from a
+	# single read: a second prompt would have hit EOF and failed.
+	run bash -c "grep -c hunter2 '${STUB_KP_STDIN}'"
+	[ "$output" = "3" ]
+}
+
+@test "keepass sync --list strips group prefixes and drops nested groups" {
+	_install_keepassxc_stub
+
+	SECRET_VAULT=keepassxc SECRET_KEEPASS_DB="${STUB_KDBX}" \
+		SECRET_KEEPASS_NO_PASSWORD=1 \
+		run bash "${SECRET}" sync --list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"MY_TOKEN"* ]]
+	[[ "$output" == *"OTHER_TOKEN"* ]]
+	[[ "$output" != *"subgroup/"* ]]
 }
 
 @test "fails cleanly when no keyring backend is available" {
