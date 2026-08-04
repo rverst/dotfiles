@@ -120,7 +120,7 @@ zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color $realpath'
 
 # functions
 fpath=(~/.config/zsh/functions $fpath)
-autoload -U bip bup fif fia tm tms git_is_clean batch_exec batch_exec_parallel
+autoload -U bip bup fif fia tm tms git_is_clean batch_exec batch_exec_parallel setJava setNode
 
 # aliases
 source "$ZDOTDIR/alias.zsh"

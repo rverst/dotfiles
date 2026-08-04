@@ -325,6 +325,65 @@ Nothing else changes: no file to edit, no re-encryption, no commit.
 
 ---
 
+## Runtime versions (Java / Node)
+
+Two autoloaded zsh functions switch the runtime for the current shell:
+
+```bash
+setJava      # fzf picker over every installed JDK
+setJava 21   # switch to JDK 21 (major, or a prefix like 21.0)
+setNode      # fzf picker over every installed Node
+setNode 22   # switch to Node 22
+```
+
+Both set `PATH` (and `setJava` also `JAVA_HOME`), **removing the previously
+selected entry first**, so repeated calls are idempotent and `PATH` never
+grows. Nothing is hardcoded: the installed versions are discovered at call time
+by `~/.local/scripts/jdk-home` and `~/.local/scripts/node-bin`. Asking for a
+version that is not installed fails loudly and lists what is.
+
+> Homebrew symlinks every *unreleased* versioned alias at the current
+> unversioned keg — `node@23` … `node@26` can all point at `Cellar/node/26.5.1`.
+> `node-bin` reads the version from the resolved Cellar directory and dedupes,
+> so it will not silently hand you a different major.
+
+**Defaults per machine** are pinned in the flavour's `~/.localrc`, which
+`.zshrc` sources after the functions are autoloaded:
+
+```zsh
+setJava -q 21   # -q: switch silently
+```
+
+### Per-project, automatically
+
+`direnv` (already hooked in `.zshrc`) gains `use java` / `use node` from
+`config/dot-config/direnv/direnvrc`:
+
+```bash
+# ~/Dev/<project>/.envrc
+use java 21
+use node 22
+```
+
+With no argument, `use java` reads `.java-version` and `use node` reads
+`.node-version` or `.nvmrc`, so repos that already carry one need a one-line
+`.envrc`. direnv restores the previous environment when you leave the tree.
+
+**Scope.** direnv walks *up* and loads the nearest `.envrc`, which then applies
+to every subdirectory. One `~/Dev/work/.envrc` with `use java 21` covers all
+projects beneath it after a single `direnv allow`.
+
+**Caveat.** A child `.envrc` *replaces* the parent rather than merging. Start
+the child with `source_up_if_exists` to inherit:
+
+```bash
+# ~/Dev/work/someproject/.envrc
+source_up_if_exists
+use node 22        # keeps the parent's java, overrides only node
+```
+
+---
+
 ## Development
 
 ```bash

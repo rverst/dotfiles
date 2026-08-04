@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+#
+# Resolve installed Node.js versions. Used by the `nodev` zsh function and by
+# direnv's `use_node`, which is why the logic lives in a plain script instead
+# of a zsh autoload: direnvrc is bash and cannot call zsh functions.
+#
+# Usage:
+#   node-bin --list      list every installed Node, one per line, as
+#                        <major>TAB<version>TAB<keg>TAB<bindir>
+#                        sorted by major descending
+#   node-bin <version>   print the bin directory for that major version (or a
+#                        version prefix like 20.20). Highest match wins.
+#                        Exits non-zero with a message on stderr if absent.
+#   node-bin             print the bin directory for the newest installed Node
+#
+# Homebrew symlinks every *unreleased* versioned alias at the current
+# unversioned keg -- node@23, node@24, node@25 and node@26 can all point at
+# Cellar/node/26.5.1. Testing `-L $prefix/opt/node@24` therefore succeeds while
+# handing you Node 26. This script takes the version from the resolved Cellar
+# directory instead and dedupes, so only versions that really exist are listed.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+_realdir() {
+	(cd "$1" 2>/dev/null && pwd -P) || return 1
+}
+
+_brew_prefix() {
+	if [ -n "${HOMEBREW_PREFIX:-}" ]; then
+		printf '%s\n' "$HOMEBREW_PREFIX"
+	elif command -v brew >/dev/null 2>&1; then
+		brew --prefix
+	fi
+}
+
+_seen=""
+_emit() {
+	local dir="$1" real version major keg
+	[ -x "$dir/bin/node" ] || return 0
+	real=$(_realdir "$dir") || return 0
+	case "$_seen" in
+	*"|$real|"*) return 0 ;;
+	esac
+	_seen="$_seen|$real|"
+	# .../Cellar/node@20/20.20.2 -> version 20.20.2, keg node@20
+	version=$(basename "$real")
+	keg=$(basename "$(dirname "$real")")
+	case "$version" in
+	[0-9]*) ;;
+	*)
+		# Not a Cellar layout (e.g. a system install); ask node itself.
+		version=$("$dir/bin/node" --version 2>/dev/null | tr -d 'v') || return 0
+		[ -n "$version" ] || return 0
+		;;
+	esac
+	major="${version%%.*}"
+	printf '%s\t%s\t%s\t%s\n' "$major" "$version" "$keg" "$real/bin"
+}
+
+_scan_brew() {
+	local prefix keg
+	prefix=$(_brew_prefix)
+	[ -n "$prefix" ] || return 0
+	for keg in "$prefix"/opt/node "$prefix"/opt/node@*; do
+		_emit "$keg"
+	done
+}
+
+# Follow a symlink chain to the real file. Needed because $prefix/bin/node is a
+# shim into the Cellar; without resolving it we would report the same Node
+# twice, once as the shim and once as the keg.
+_resolve_link() {
+	local target="$1" link count=0
+	while [ -L "$target" ] && [ "$count" -lt 32 ]; do
+		link=$(readlink "$target")
+		case "$link" in
+		/*) target="$link" ;;
+		*) target="$(dirname "$target")/$link" ;;
+		esac
+		count=$((count + 1))
+	done
+	printf '%s\n' "$target"
+}
+
+# Fall back to whatever node is on PATH (system packages, servers without
+# Homebrew) so --list is never empty just because brew is absent.
+_scan_path() {
+	local bin dir
+	bin=$(command -v node 2>/dev/null) || return 0
+	bin=$(_resolve_link "$bin")
+	dir=$(dirname "$(dirname "$bin")")
+	_emit "$dir"
+}
+
+list_nodes() {
+	{
+		_scan_brew
+		_scan_path
+	} | sort -t"$(printf '\t')" -k1,1nr -k2,2r
+}
+
+usage() {
+	cat >&2 <<'EOF'
+usage: node-bin [--list | <version>]
+
+  --list      list installed Node versions as <major>\t<version>\t<keg>\t<bindir>
+  <version>   print the bin directory for that major version or version prefix
+  (no args)   print the bin directory for the newest installed Node
+EOF
+}
+
+main() {
+	local listing want major version bindir
+
+	case "${1:-}" in
+	-h | --help)
+		usage
+		return 0
+		;;
+	esac
+
+	listing=$(list_nodes)
+
+	if [ -z "$listing" ]; then
+		printf 'node-bin: no Node.js installation found\n' >&2
+		return 1
+	fi
+
+	if [ "${1:-}" = "--list" ]; then
+		printf '%s\n' "$listing"
+		return 0
+	fi
+
+	want="${1:-}"
+
+	while IFS=$'\t' read -r major version _ bindir; do
+		if [ -z "$want" ] || [ "$want" = "$major" ] ||
+			[ "$want" = "$version" ] || [ "${version#"$want".}" != "$version" ]; then
+			printf '%s\n' "$bindir"
+			return 0
+		fi
+	done <<<"$listing"
+
+	printf 'node-bin: no Node matching "%s" (installed: %s)\n' \
+		"$want" "$(printf '%s\n' "$listing" | cut -f1 | paste -sd' ' -)" >&2
+	return 1
+}
+
+main "$@"

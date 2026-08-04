@@ -83,27 +83,5 @@ if [ "$(uname -s)" = "Linux" ]; then
 		sys="sudo systemctl"
 fi
 
-if [ "$(uname -s)" = "Darwin" ]; then
-	setNode() {
-		local version=$1
-		export PATH="/opt/homebrew/opt/node@${version}/bin:$PATH"
-
-		if [ -z $2 ]; then node --version; fi
-	}
-
-	[ -L "/opt/homebrew/opt/node@24" ] && alias node-24="setNode 24"
-	[ -L "/opt/homebrew/opt/node@22" ] && alias node-22="setNode 22"
-	[ -L "/opt/homebrew/opt/node@20" ] && alias node-20="setNode 20"
-	[ -L "/opt/homebrew/opt/node@18" ] && alias node-18="setNode 18"
-	[ -L "/opt/homebrew/opt/node@16" ] && alias node-16="setNode 16"
-fi
-
-setJava() {
-	local version=$1
-	export JAVA_HOME=$(/usr/libexec/java_home -v $version)
-
-	if [ -z $2 ]; then java --version; fi
-}
-
-alias java-21="setJava 21"
-alias java-11="setJava 11"
+# Runtime version switching lives in the `setJava` and `setNode` autoloaded
+# functions (see ~/.config/zsh/functions), not here.

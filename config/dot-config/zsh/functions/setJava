@@ -1,0 +1,67 @@
+#!/usr/bin/env zsh
+# Switch the active JDK for this shell.
+#
+# Usage:
+# `setJava`        - pick from the installed JDKs with fzf.
+# `setJava 21`     - switch to JDK 21 (major version, or a prefix like 21.0).
+# `setJava -q 21`  - switch without printing anything; used to pin a default
+#                    from ~/.localrc.
+#
+# Versions are discovered by ~/.local/scripts/jdk-home, so this never offers a
+# version that is not actually installed.
+#
+# Sets JAVA_HOME and puts its bin directory at the front of PATH, removing the
+# previously selected one first so repeated calls stay idempotent and PATH does
+# not grow.
+
+local quiet=0
+
+while [[ $1 == -* ]]; do
+  case $1 in
+  -q | --quiet)
+    quiet=1
+    shift
+    ;;
+  -h | --help)
+    print -u2 'usage: setJava [-q] [<version>]'
+    return 0
+    ;;
+  *)
+    print -u2 "setJava: unknown option: $1"
+    return 2
+    ;;
+  esac
+done
+
+local version=$1
+local listing
+
+if [[ -z $version ]]; then
+  listing=$(jdk-home --list) || return 1
+
+  local selection
+  selection=$(
+    print -r -- "$listing" |
+      awk -F'\t' '{ printf "%-4s %-18s %s\n", $1, $2, $3 }' |
+      fzf --prompt='jdk> ' --height=40% --reverse \
+        --header='select a JDK for this shell'
+  )
+
+  [[ -z $selection ]] && return 0
+  version=${selection%% *}
+fi
+
+local home
+home=$(jdk-home "$version") || return 1
+
+# Drop the bin directory of the JDK we selected last time, if any.
+if [[ -n $JAVA_HOME ]]; then
+  path=("${(@)path:#$JAVA_HOME/bin}")
+fi
+
+export JAVA_HOME=$home
+path=("$JAVA_HOME/bin" $path)
+
+if ((!quiet)); then
+  java -version 2>&1 | head -n 1
+fi

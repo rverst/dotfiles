@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+#
+# Resolve installed JDKs. Used by the `jdk` zsh function and by direnv's
+# `use_java`, which is why the logic lives in a plain script instead of a
+# zsh autoload: direnvrc is bash and cannot call zsh functions.
+#
+# Usage:
+#   jdk-home --list      list every installed JDK, one per line, as
+#                        <major>TAB<version>TAB<vendor>TAB<path>
+#                        sorted by major descending
+#   jdk-home <version>   print JAVA_HOME for that version (major, or a
+#                        version prefix like 21.0). Highest match wins.
+#                        Exits non-zero with a message on stderr if absent.
+#   jdk-home             print JAVA_HOME for the newest installed JDK
+#
+# Discovery is derived entirely from what is actually installed; there are no
+# hardcoded version lists.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+# Resolve a directory to its physical path so the same JDK reached through
+# different symlinks is only reported once.
+_realdir() {
+	(cd "$1" 2>/dev/null && pwd -P) || return 1
+}
+
+# Normalise a java version string to its major number: 1.8.0_402 -> 8,
+# 21.0.11 -> 21.
+_major() {
+	case "$1" in
+	1.*)
+		printf '%s\n' "$1" | cut -d. -f2
+		;;
+	*)
+		printf '%s\n' "$1" | cut -d. -f1
+		;;
+	esac
+}
+
+# Emit "<major>\t<version>\t<vendor>\t<path>" unless this path was already
+# emitted. Skips anything that is not actually a JDK.
+_seen=""
+_emit() {
+	local version="$1" vendor="$2" dir="$3" real major
+	[ -x "$dir/bin/java" ] || return 0
+	real=$(_realdir "$dir") || return 0
+	case "$_seen" in
+	*"|$real|"*) return 0 ;;
+	esac
+	_seen="$_seen|$real|"
+	major=$(_major "$version")
+	printf '%s\t%s\t%s\t%s\n' "$major" "$version" "$vendor" "$real"
+}
+
+# macOS: java_home knows about anything registered under
+# /Library/Java/JavaVirtualMachines (Temurin and other casks land there).
+_scan_java_home() {
+	local out line version vendor path
+	command -v /usr/libexec/java_home >/dev/null 2>&1 || return 0
+	out=$(/usr/libexec/java_home -V 2>&1) || return 0
+	while IFS= read -r line; do
+		# "    21.0.11 (arm64) "Eclipse Adoptium" - "OpenJDK 21.0.11" /path"
+		if [[ $line =~ ^[[:space:]]+([0-9][^[:space:]]*)[[:space:]]+\([^\)]*\)[[:space:]]+\"([^\"]*)\"[[:space:]]+-[[:space:]]+\"[^\"]*\"[[:space:]]+(/.*)$ ]]; then
+			version="${BASH_REMATCH[1]}"
+			vendor="${BASH_REMATCH[2]}"
+			path="${BASH_REMATCH[3]}"
+			_emit "$version" "$vendor" "$path"
+		fi
+	done <<<"$out"
+}
+
+# macOS: brew's openjdk formulae are only visible to java_home if the user
+# manually symlinked them into /Library/Java/JavaVirtualMachines, which is not
+# guaranteed on a fresh machine. Scan the kegs directly as well; _emit dedupes
+# against whatever java_home already reported.
+_scan_brew_openjdk() {
+	local prefix keg home version
+	prefix="${HOMEBREW_PREFIX:-}"
+	if [ -z "$prefix" ] && command -v brew >/dev/null 2>&1; then
+		prefix=$(brew --prefix)
+	fi
+	[ -n "$prefix" ] || return 0
+	for keg in "$prefix"/opt/openjdk "$prefix"/opt/openjdk@*; do
+		home="$keg/libexec/openjdk.jdk/Contents/Home"
+		[ -x "$home/bin/java" ] || continue
+		version=$(_version_of "$home")
+		_emit "$version" "Homebrew" "$home"
+	done
+}
+
+# Linux: JDKs conventionally live under /usr/lib/jvm.
+_scan_usr_lib_jvm() {
+	local dir version
+	for dir in /usr/lib/jvm/*; do
+		[ -x "$dir/bin/java" ] || continue
+		version=$(_version_of "$dir")
+		_emit "$version" "system" "$dir"
+	done
+}
+
+# Read the version from a JDK's `release` file. Falls back to the directory
+# name so a JDK is still listed (just less precisely) if the file is missing.
+# Never invokes `java`, which would make listing noticeably slow.
+_version_of() {
+	local dir="$1" line
+	if [ -r "$dir/release" ]; then
+		line=$(grep -m1 '^JAVA_VERSION=' "$dir/release" 2>/dev/null || true)
+		if [ -n "$line" ]; then
+			line="${line#JAVA_VERSION=}"
+			printf '%s\n' "${line//\"/}"
+			return 0
+		fi
+	fi
+	printf '%s\n' "$(basename "$dir")" | tr -cd '0-9._' | sed 's/^[._]*//'
+}
+
+list_jdks() {
+	{
+		_scan_java_home
+		_scan_brew_openjdk
+		_scan_usr_lib_jvm
+	} | sort -t"$(printf '\t')" -k1,1nr -k2,2r
+}
+
+usage() {
+	cat >&2 <<'EOF'
+usage: jdk-home [--list | <version>]
+
+  --list      list installed JDKs as <major>\t<version>\t<vendor>\t<path>
+  <version>   print JAVA_HOME for that major version or version prefix
+  (no args)   print JAVA_HOME for the newest installed JDK
+EOF
+}
+
+main() {
+	local listing want major version path
+
+	case "${1:-}" in
+	-h | --help)
+		usage
+		return 0
+		;;
+	esac
+
+	listing=$(list_jdks)
+
+	if [ -z "$listing" ]; then
+		printf 'jdk-home: no JDK found\n' >&2
+		return 1
+	fi
+
+	if [ "${1:-}" = "--list" ]; then
+		printf '%s\n' "$listing"
+		return 0
+	fi
+
+	want="${1:-}"
+
+	while IFS=$'\t' read -r major version _ path; do
+		if [ -z "$want" ] || [ "$want" = "$major" ] ||
+			[ "$want" = "$version" ] || [ "${version#"$want".}" != "$version" ]; then
+			printf '%s\n' "$path"
+			return 0
+		fi
+	done <<<"$listing"
+
+	printf 'jdk-home: no JDK matching "%s" (installed: %s)\n' \
+		"$want" "$(printf '%s\n' "$listing" | cut -f1 | paste -sd' ' -)" >&2
+	return 1
+}
+
+main "$@"

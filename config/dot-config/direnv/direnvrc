@@ -1,0 +1,92 @@
+# direnv configuration -- loaded before every .envrc.
+#
+# Adds `use java <version>` and `use node <version>` so a project (or a whole
+# directory of projects) can pin its runtime. direnv restores PATH and the
+# environment automatically when you leave the tree, which is why this is
+# preferred over a chpwd hook.
+#
+# Note on scope: direnv walks *up* from the current directory and loads the
+# nearest .envrc, which then applies to every subdirectory. So a single
+# ~/work/.envrc containing `use java 21` covers all projects beneath it after
+# one `direnv allow`. If a child project has its own .envrc it *replaces* the
+# parent rather than merging -- start the child with `source_up_if_exists` to
+# inherit.
+#
+# Version resolution is shared with the `jdk` / `nodev` zsh functions via
+# ~/.local/scripts/jdk-home and ~/.local/scripts/node-bin. direnvrc is bash and
+# cannot call zsh autoloads, hence the scripts.
+
+_dot_helper() {
+	local name="$1"
+	if command -v "$name" >/dev/null 2>&1; then
+		command -v "$name"
+	elif [ -x "$HOME/.local/scripts/$name" ]; then
+		printf '%s\n' "$HOME/.local/scripts/$name"
+	else
+		return 1
+	fi
+}
+
+# use java [<version>]
+#
+# With no argument, reads .java-version from the current directory.
+use_java() {
+	local version="${1:-}" helper home
+
+	if [ -z "$version" ]; then
+		watch_file .java-version
+		if [ -r .java-version ]; then
+			version=$(tr -d '[:space:]' <.java-version)
+		else
+			log_error "use java: no version given and no .java-version file"
+			return 1
+		fi
+	fi
+
+	if ! helper=$(_dot_helper jdk-home); then
+		log_error "use java: jdk-home helper not found (expected on PATH or in ~/.local/scripts)"
+		return 1
+	fi
+
+	if ! home=$("$helper" "$version"); then
+		log_error "use java: JDK $version is not installed"
+		return 1
+	fi
+
+	export JAVA_HOME="$home"
+	PATH_add "$JAVA_HOME/bin"
+	log_status "java $version -> $JAVA_HOME"
+}
+
+# use node [<version>]
+#
+# With no argument, reads .node-version or .nvmrc from the current directory.
+use_node() {
+	local version="${1:-}" helper bindir
+
+	if [ -z "$version" ]; then
+		watch_file .node-version
+		watch_file .nvmrc
+		if [ -r .node-version ]; then
+			version=$(tr -d '[:space:]v' <.node-version)
+		elif [ -r .nvmrc ]; then
+			version=$(tr -d '[:space:]v' <.nvmrc)
+		else
+			log_error "use node: no version given and no .node-version or .nvmrc file"
+			return 1
+		fi
+	fi
+
+	if ! helper=$(_dot_helper node-bin); then
+		log_error "use node: node-bin helper not found (expected on PATH or in ~/.local/scripts)"
+		return 1
+	fi
+
+	if ! bindir=$("$helper" "$version"); then
+		log_error "use node: Node $version is not installed"
+		return 1
+	fi
+
+	PATH_add "$bindir"
+	log_status "node $version -> $bindir"
+}
