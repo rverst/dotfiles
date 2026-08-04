@@ -229,10 +229,45 @@ secret sync <name> [item]         pull from Bitwarden/Vaultwarden into the keyri
 Backends are auto-detected: `security(1)` on macOS (login keychain, already
 unlocked, no prompt), `secret-tool(1)` on Linux (needs **libsecret** —
 `libsecret-tools` on Debian/Ubuntu, `libsecret` on Arch/Fedora — plus a running
-keyring daemon). Server flavours have no keyring; `secret` errors cleanly there.
+keyring daemon), and `pwsh.exe` on **WSL2** (see below). Server flavours have no
+keyring; `secret` errors cleanly there. `SECRET_BACKEND` forces a specific one.
 
 `get` **fails loudly** when a secret is missing rather than printing an empty
 string, so you get a clear error instead of a confusing `401` from the far end.
+
+### WSL2 / Windows
+
+Windows' keychain is reached through **PowerShell 7 + SecretManagement**, over
+WSL interop — so the same `secret` script, and the same commands, work inside a
+WSL2 distro. PowerShell 5.1 is deliberately not supported: its UTF-16LE/CRLF
+output makes the boundary needlessly painful.
+
+One-time setup, on the **Windows** side:
+```powershell
+winget install Microsoft.PowerShell
+Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore -Scope CurrentUser
+Set-SecretStoreConfiguration -Authentication None -Interaction None
+```
+
+The script keeps values off the command line: the PowerShell snippet travels in
+`-EncodedCommand`, the verb and name travel in environment variables (forwarded
+with `WSLENV`), and the **value only ever crosses on stdin/stdout, base64-encoded
+both ways** — invisible in the Windows process list, and immune to encoding and
+quoting problems. That is actually stricter than the macOS path, where
+`security(1)` forces the value through `argv`.
+
+Notes:
+
+- Each interop call costs a few hundred milliseconds. `secret run A B C` batches
+  into a **single** call, but don't put `secret get` in a shell prompt or a loop.
+- The vault lives in the Windows user profile, so it is shared across every WSL
+  distro and native Windows tooling. Usually what you want.
+- `Authentication None` trades the unlock prompt for DPAPI-only protection at
+  rest. Reasonable on a single-user laptop; a conscious tradeoff, not an oversight.
+- `secret sync` needs no special handling — `rbw` runs natively inside WSL, and
+  only the store step crosses the boundary.
+- If `secret` can't find `pwsh.exe`, check `appendWindowsPath` in `/etc/wsl.conf`;
+  the default install location is probed as a fallback.
 
 ### Bitwarden / Vaultwarden as the source of truth
 
