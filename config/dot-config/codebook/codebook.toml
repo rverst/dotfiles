@@ -1,0 +1,17 @@
+# codebook-lsp — code-aware spell checker (https://github.com/blopker/codebook)
+# Global config. Project-level codebook.toml / .codebook.toml overrides this.
+
+# Default for code files.
+dictionaries = ["en_us"]
+
+# Words that should never be flagged, anywhere.
+words = []
+
+min_word_length = 3
+
+# Prose files are usually German (Notizen, Talks, Docs).
+# en_us bleibt zusätzlich aktiv, weil deutsche Texte voller englischer
+# Fachbegriffe stecken.
+[[overrides]]
+paths = ["**/*.md", "**/*.mdx", "**/*.typ", "**/*.txt"]
+dictionaries = ["de", "en_us"]

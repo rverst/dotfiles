@@ -7,6 +7,9 @@
 #
 # Configuration: ~/.config/tmux/projects.yaml
 
+# Ensure Homebrew and local bins are on PATH (Ghostty launches without a login shell)
+PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.local/bin:$HOME/.local/scripts:$PATH"
+
 TM_CONFIG="${TM_CONFIG:-$HOME/.config/tmux/projects.yaml}"
 
 # Config is read ONCE into these arrays at startup (see _tm_load_config below):
@@ -189,13 +192,13 @@ _tm_create_session() {
 
 # Direct argument: either a session name or a directory path
 if [[ -n "$1" ]]; then
-  local arg="${1/#\~/$HOME}"
+  arg="${1/#\~/$HOME}"
 
   if [[ -d "$arg" ]]; then
     # It's a directory — load config and create a proper session
     _tm_load_config
     _tm_apply_subs_inline "${arg:h:t}/${arg:t}"
-    local session_name="$_tm_name_result"
+    session_name="$_tm_name_result"
     session_name="${session_name//\//-}"
     session_name="${session_name//\~/-}"
     session_name="${session_name// /-}"
@@ -214,7 +217,7 @@ if [[ -n "$1" ]]; then
     tmux "$_tm_change" -t "$1" 2>/dev/null \
       || (tmux new-session -d -s "$1" && tmux "$_tm_change" -t "$1")
   fi
-  return
+  exit
 fi
 
 # Load config once — single yq call
@@ -222,8 +225,7 @@ _tm_load_config
 
 # Collect entries as tab-separated "name\tpath\tkind" triples.
 # kind: "running" for existing sessions, "new" for discovered dirs.
-local -a entries=()
-local line
+entries=("no tmux		notmux")
 
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
@@ -239,20 +241,20 @@ done < <(_tm_discover)
 #   col 1 (hidden): index for lookup after selection
 #   col 2:          fixed-width name + running indicator aligned
 #   col 3 (hidden): path — shown in preview bar at the top
-local -a display_lines=()
-local entry ename epath ekind rest
+display_lines=()
 for (( i=1; i<=${#entries}; i++ )); do
   entry="${entries[$i]}"
   ename="${entry%%	*}";  rest="${entry#*	}"
   epath="${rest%%	*}";   ekind="${rest##*	}"
-  if [[ "$ekind" == "running" ]]; then
+  if [[ "$ekind" == "notmux" ]]; then
+    display_lines+=("$(printf '%d\t%-40s  \033[33m(no tmux)\033[0m\t%s' "$i" "$ename" "$epath")")
+  elif [[ "$ekind" == "running" ]]; then
     display_lines+=("$(printf '%d\t%-40s  \033[32m(running)\033[0m\t%s' "$i" "$ename" "$epath")")
   else
     display_lines+=("$(printf '%d\t%-40s\t%s' "$i" "$ename" "$epath")")
   fi
 done
 
-local selection
 selection=$(printf '%s\n' "${display_lines[@]}" \
   | fzf --ansi --no-sort \
         --delimiter=$'\t' \
@@ -263,20 +265,21 @@ selection=$(printf '%s\n' "${display_lines[@]}" \
         --prompt='session> ' \
         --header='enter: open  |  ctrl-c: cancel')
 
-[[ -z "$selection" ]] && return
+[[ -z "$selection" ]] && exit
 
 # Look up the selected entry by its embedded index
-local sel_idx="${selection%%	*}"
-local sel_entry="${entries[$sel_idx]}"
-local sel_name sel_path sel_kind sel_rest
+sel_idx="${selection%%	*}"
+sel_entry="${entries[$sel_idx]}"
 sel_name="${sel_entry%%	*}";  sel_rest="${sel_entry#*	}"
 sel_path="${sel_rest%%	*}";   sel_kind="${sel_rest##*	}"
 
-if [[ "$sel_kind" == "running" ]]; then
+if [[ "$sel_kind" == "notmux" ]]; then
+  exec "$SHELL"
+elif [[ "$sel_kind" == "running" ]]; then
   tmux "$_tm_change" -t "$sel_name"
 else
   # Sanitize: replace /, ~, spaces, and dots with -; collapse and strip edge dashes
-  local session_name="${sel_name//\//-}"
+  session_name="${sel_name//\//-}"
   session_name="${session_name//\~/-}"
   session_name="${session_name// /-}"
   session_name="${session_name//./-}"

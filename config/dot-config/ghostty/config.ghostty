@@ -12,4 +12,5 @@ font-family-bold-italic = "BerkeleyMono Nerd Font Bold Italic"
 font-size = 15
 
 macos-option-as-alt = false
-command = /opt/homebrew/bin/tmux
+#command = /opt/homebrew/bin/tmux
+command = /Users/robverst/.local/scripts/tm
