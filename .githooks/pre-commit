@@ -35,6 +35,17 @@ source "${DOTFILES_DIR}/.scripts/flavours.sh"
 
 cd "${DOTFILES_DIR}"
 
+# --- 0. Remove .DS_Store files before committing ---------------------------
+# macOS creates these automatically; they break stow (cannot overwrite a regular
+# file with a symlink) and should never enter the repo.
+while IFS= read -r f; do
+	[ -f "${f}" ] || continue
+	rm -f "${f}"
+	# If it was staged, drop it from the index too.
+	git rm --cached --quiet --force -- "${f}" 2>/dev/null || true
+	info "Removed .DS_Store: ${f}"
+done < <(find . -name ".DS_Store" -not -path './.git/*')
+
 # --- 1. Re-encrypt edited decrypted workspaces -----------------------------
 # Derive layers from the decrypted-* dirs that exist, so we never prompt for a
 # flavour selection.

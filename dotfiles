@@ -90,11 +90,26 @@ check_dependencies() {
 	fi
 }
 
+_clean_ds_store() {
+	# .DS_Store files created by macOS Finder break stow: stow cannot replace a
+	# regular file with a symlink. Delete them from the repo tree before stowing.
+	local found=0
+	while IFS= read -r f; do
+		[ -f "${f}" ] || continue
+		rm -f "${f}"
+		found=1
+	done < <(find "${DOTFILES_DIR}" -name ".DS_Store" -not -path "${DOTFILES_DIR}/.git/*")
+	[ "${found}" -eq 1 ] && info "Removed stale .DS_Store files."
+	return 0
+}
+
 stow_packages() {
 	local action="$1"
 	local flags=""
 	local current_flavour
 	flavour_get_current current_flavour
+
+	_clean_ds_store
 
 	# --no-folding: never create directory symlinks. Regular packages and the
 	# flavour layers are stowed from different stow dirs but share parent dirs
