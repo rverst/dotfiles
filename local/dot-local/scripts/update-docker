@@ -1,0 +1,7 @@
+#!/usr/bin/env zsh
+#
+# Script to update a version pinned Docker via homebrew
+
+brew unpin docker-desktop
+brew upgrade --cask docker-desktop
+brew pin docker-desktop

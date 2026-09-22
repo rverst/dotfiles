@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Clear cached shell-init snippets that can go stale (e.g. after `topgrade`
+# upgrades a tool but the cache in ~/.cache/zsh doesn't get regenerated,
+# leaving the prompt broken/missing).
+#
+# Usage: fix-prompt
+#
+# After running this, open a new shell (or `exec zsh`) to rebuild caches.
+
+set -euo pipefail
+
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
+zdotdir="${ZDOTDIR:-$HOME/.config/zsh}"
+
+removed=0
+
+for f in "$cache_dir"/brew-shellenv.zsh \
+    "$cache_dir"/fzf-init.zsh \
+    "$cache_dir"/zoxide-init.zsh \
+    "$cache_dir"/oh-my-posh-init.zsh \
+    "$cache_dir"/direnv-init.zsh; do
+    if [[ -f "$f" ]]; then
+        rm -f "$f"
+        echo "removed $f"
+        removed=1
+    fi
+done
+
+# zsh completion cache (compinit -C skips regeneration if this is present)
+if [[ -f "$zdotdir/.zcompdump" ]]; then
+    rm -f "$zdotdir/.zcompdump" "$zdotdir/.zcompdump".zwc 2>/dev/null || true
+    echo "removed $zdotdir/.zcompdump"
+    removed=1
+fi
+
+if [[ "$removed" -eq 0 ]]; then
+    echo "no caches found to remove"
+fi
+
+echo "done — open a new shell (or run 'exec zsh') to rebuild"
