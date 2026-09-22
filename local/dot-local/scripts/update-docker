@@ -2,6 +2,7 @@
 #
 # Script to update a version pinned Docker via homebrew
 
+echo "Updating Docker Desktop..."
 brew unpin docker-desktop
 brew upgrade --cask docker-desktop
 brew pin docker-desktop
