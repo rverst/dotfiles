@@ -2,18 +2,15 @@
 # zmodload zsh/zprof  # uncomment to profile
 
 # environment variables
-typeset -U path
-path=(~/.local/bin ~/.local/scripts $path)
-
-[ -d ~/go/bin ] && path=(~/go/bin $path)
+# re-apply user PATH from .zshenv (path_helper in /etc/zprofile reorders it for login shells)
+path=($_user_path $path)
 
 export HOMEBREW_NO_ENV_HINTS=1
-export GPG_TTY=$(tty)
+export GPG_TTY=$TTY
 export FZF_DEFAULT_OPTS='--bind ctrl-a:accept --height 40% --tmux 80%'
-export LC_CTYPE=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
 export COMPOSE_MENU=false
-export RBENV_ROOT="${ZDG_DATA_HOME:-${HOME}/.local/share}/rbenv"
+export RBENV_ROOT="${XDG_DATA_HOME:-${HOME}/.local/share}/rbenv"
 export CLAUDE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/claude"
 
 #vi mode
@@ -21,7 +18,7 @@ bindkey -v
 export KEYTIMEOUT=1
 
 # plugin manager
-ZINIT_HOME="${ZDG_DATA_HOME:-${HOME}/.local/share}/zinit/zinit.git"
+ZINIT_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/zinit/zinit.git"
 if [ ! -d "$ZINIT_HOME" ]; then
   mkdir -p "$(dirname $ZINIT_HOME)"
   git clone https://github.com/zdharma-continuum/zinit.git "$ZINIT_HOME"
@@ -38,19 +35,9 @@ zinit snippet OMZP::ssh
 #zinit ice atinit'zstyle ":omz:plugins:sudo" keyring "^s"'
 #zinit snippet OMZ::plugins/sudo
 
-# snippets - defer heavy ones with turbo mode (load after shell is interactive)
-zinit ice wait lucid
-zinit snippet OMZP::git
+# snippets - deferred with turbo mode (load after shell is interactive)
 zinit ice wait lucid
 zinit snippet OMZP::command-not-found
-zinit ice wait lucid
-zinit snippet OMZP::aws
-zinit ice wait lucid
-zinit snippet OMZP::azure
-zinit ice wait lucid
-zinit snippet OMZP::kubectl
-zinit ice wait lucid
-zinit snippet OMZP::kubectx
 
 zinit light-mode for \
   wait'0' lucid \
@@ -128,21 +115,10 @@ zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color $realpath'
 
 # functions
 fpath=(~/.config/zsh/functions $fpath)
-autoload -U bip bup fif fia tms git_is_clean batch_exec batch_exec_parallel setJava setNode
+autoload -U bip bup fif fia git_is_clean batch_exec batch_exec_parallel setJava setNode
 
 # aliases
 source "$ZDOTDIR/alias.zsh"
-
-# homebrew integration - cache shellenv to avoid spawning brew on every shell start
-if [ -f /opt/homebrew/bin/brew ]; then
-  _brew_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/brew-shellenv.zsh"
-  if [[ ! -f "$_brew_cache" || /opt/homebrew/bin/brew -nt "$_brew_cache" ]]; then
-    mkdir -p "${_brew_cache:h}"
-    /opt/homebrew/bin/brew shellenv >|"$_brew_cache"
-  fi
-  source "$_brew_cache"
-  unset _brew_cache
-fi
 
 # fzf shell integration - cache to avoid subprocess on every shell start
 if (($+commands[fzf])); then
@@ -237,5 +213,3 @@ if (($+commands[rbenv])); then
     bundle "$@"
   }
 fi
-
-. "$HOME/.local/share/../bin/env"

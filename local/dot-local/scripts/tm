@@ -7,14 +7,11 @@
 #
 # Configuration: ~/.config/tmux/projects.yaml
 
-# Ensure Homebrew and local bins are on PATH (Ghostty launches without a login shell)
-PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.local/bin:$HOME/.local/scripts:$PATH"
-
 TM_CONFIG="${TM_CONFIG:-$HOME/.config/tmux/projects.yaml}"
 
 # Config is read ONCE into these arrays at startup (see _tm_load_config below):
 #   _tm_subs    — "from\tto" pairs for session name substitutions
-#   _tm_windows — "name\tcommand" pairs for windows to create per session
+#   _tm_windows — "name\tcommand\tsplit" triples for windows to create per session
 #   _tm_sources — "path\tmode\tdepth\texcludes" per source entry
 typeset -ga _tm_subs _tm_windows _tm_sources
 
@@ -28,16 +25,17 @@ _tm_load_config() {
   _tm_subs=()
   _tm_windows=()
   _tm_sources=()
-  local tag f1 f2 f3 f4
-  while IFS=$'\t' read -r tag f1 f2 f3 f4; do
-    case "$tag" in
-      SUB) _tm_subs+=("${f1}	${f2}") ;;
-      WIN) _tm_windows+=("${f1}	${f2}") ;;
-      SRC) _tm_sources+=("${f1}	${f2}	${f3}	${f4}") ;;
+  local rec
+  # Read whole lines: IFS=$'\t' read would collapse empty fields (tab is whitespace)
+  while IFS= read -r rec; do
+    case "${rec%%	*}" in
+      SUB) _tm_subs+=("${rec#*	}") ;;
+      WIN) _tm_windows+=("${rec#*	}") ;;
+      SRC) _tm_sources+=("${rec#*	}") ;;
     esac
   done < <(yq e '
     (.substitutions | to_entries | .[] | "SUB\t" + .key + "\t" + .value),
-    (.windows | .[] | "WIN\t" + .name + "\t" + (.command // "")),
+    (.windows | .[] | "WIN\t" + .name + "\t" + (.command // "") + "\t" + (.split // "")),
     (.sources | .[] |
       "SRC\t" + .path + "\t" + .mode + "\t" +
       (.depth // 1 | tostring) + "\t" +
@@ -167,21 +165,24 @@ _tm_discover() {
 # Create a new session for the given directory using _tm_windows config.
 _tm_create_session() {
   local session="$1" dir="$2"
-  local win_name win_cmd
+  local win_name win_cmd win_split target
+  local -a parts
   local w=1
 
-  # First window is created with new-session
-  win_name="${_tm_windows[1]%%	*}"
-  win_cmd="${_tm_windows[1]#*	}"
-  tmux new-session -d -s "$session" -c "$dir" -n "$win_name"
-  [[ -n "$win_cmd" ]] && tmux send-keys -t "${session}:1" "$win_cmd" Enter
-
-  # Remaining windows
-  for (( w=2; w<=${#_tm_windows}; w++ )); do
-    win_name="${_tm_windows[$w]%%	*}"
-    win_cmd="${_tm_windows[$w]#*	}"
-    tmux new-window -t "${session}:${w}" -n "$win_name" -c "$dir"
-    [[ -n "$win_cmd" ]] && tmux send-keys -t "${session}:${w}" "$win_cmd" Enter
+  for (( w=1; w<=${#_tm_windows}; w++ )); do
+    parts=("${(@ps:\t:)_tm_windows[$w]}")
+    win_name="${parts[1]}" win_cmd="${parts[2]}" win_split="${parts[3]}"
+    target="${session}:${w}"
+    if (( w == 1 )); then
+      tmux new-session -d -s "$session" -c "$dir" -n "$win_name"
+    else
+      tmux new-window -t "$target" -n "$win_name" -c "$dir"
+    fi
+    [[ -n "$win_cmd" ]] && tmux send-keys -t "$target" "$win_cmd" Enter
+    # split: h = side by side (prefix %), v = stacked (prefix "); focus stays on the first pane
+    if [[ "$win_split" == [hv] ]]; then
+      tmux split-window -d "-$win_split" -t "$target" -c "$dir"
+    fi
   done
 
   tmux select-window -t "${session}:1"

@@ -8,5 +8,25 @@ export ZDOTDIR=$XDG_CONFIG_HOME/zsh
 export EDITOR=nvim
 export VISUAL=nvim
 
-# opencode
-export PATH=/Users/robverst/.opencode/bin:$PATH
+# homebrew (static equivalent of `brew shellenv`, no subprocess)
+if [[ -d /opt/homebrew ]]; then
+  export HOMEBREW_PREFIX=/opt/homebrew
+  export HOMEBREW_CELLAR=/opt/homebrew/Cellar
+  export HOMEBREW_REPOSITORY=/opt/homebrew
+  export INFOPATH="/opt/homebrew/share/info:${INFOPATH:-}"
+  fpath=(/opt/homebrew/share/zsh/site-functions $fpath)
+fi
+
+# PATH lives here so scripts, tmux popups and non-interactive shells get it too.
+# macOS' /etc/zprofile (path_helper) reorders PATH for login shells, so .zshrc
+# re-applies _user_path afterwards.
+typeset -U path fpath
+_user_path=(
+  ~/.local/bin
+  ~/.local/scripts
+  ~/go/bin(N/)
+  ~/.opencode/bin(N/)
+  /opt/homebrew/bin(N/)
+  /opt/homebrew/sbin(N/)
+)
+path=($_user_path $path)

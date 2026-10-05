@@ -23,13 +23,8 @@ alias ldock="lazydocker"
 alias cl="claude"
 alias oc="opencode"
 
-if [ ! -z $(command -v clocker) ]; then
-	alias cl="clocker claude"
-fi
-
 # quick access to #EDITOR
 alias e="$EDITOR"
-alias ve="$VEDITOR"
 alias se="sudo $EDITOR"
 
 alias vim='nvim'
@@ -40,14 +35,33 @@ alias cp="cp -iv"
 alias mv="mv -iv"
 alias mkd="mkdir -pv"
 
-alias ts="tmux-sessionizer"
-alias tms="tmux-sessionizer"
-
 if [ "$(uname -s)" = "Linux" ]; then
 	alias rm="rm -vI"
 	alias netlis="netstat -tulpn"
 elif [ "$(uname -s)" = "Darwin" ]; then
-	alias rm='trash'          # goes to macOS Trash, undeletable-by-accident (brew install trash)
+	# rm moves to the macOS Trash instead (has saved me before). rm-style flags
+	# (-r, -f, -i, ...) are dropped so muscle memory keeps working; with -f,
+	# missing files are skipped silently like rm does.
+	rm() {
+		local -a files
+		local force=0 opts_done=0 ret=0 arg
+		for arg in "$@"; do
+			if ((!opts_done)) && [[ $arg == -- ]]; then
+				opts_done=1
+			elif ((!opts_done)) && [[ $arg == -?* ]]; then
+				[[ $arg == -*f* ]] && force=1
+			elif [[ -e $arg || -L $arg ]]; then
+				[[ $arg == -* ]] && arg="./$arg" # trash has no --
+				files+=("$arg")
+			elif ((!force)); then
+				print -u2 "rm: $arg: No such file or directory"
+				ret=1
+			fi
+		done
+		((${#files})) || return $ret
+		/usr/bin/trash "${files[@]}" || ret=$?
+		return $ret
+	}
 	alias rrm='command rm -v' # if you really mean it :-)
 	alias netlis="netstat -p tcp -van | grep LISTEN"
 fi
