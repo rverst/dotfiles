@@ -160,7 +160,12 @@ fi
 # prompt - not cached: init registers a per-shell session (POSH_SESSION_ID) holding the config;
 # a cached init shares one session across all shells and falls back to the default theme once it's cleaned up
 if [ "$TERM_PROGRAM" != "Apple_Terminal" ] && command -v oh-my-posh >/dev/null; then
-  eval "$(oh-my-posh init zsh --config "$XDG_CONFIG_HOME/oh-my-posh/mytheme.omp.yaml")"
+  _omp_config="$XDG_CONFIG_HOME/oh-my-posh/mytheme.omp.yaml"
+  eval "$(oh-my-posh init zsh --config "$_omp_config")"
+  # print only reads the config from the session cache and renders the default theme if that entry gets lost;
+  # passing --config makes it fall back to our theme instead
+  functions[_omp_get_prompt_orig]=$functions[_omp_get_prompt]
+  _omp_get_prompt() { _omp_get_prompt_orig "$1" --config="$_omp_config" "${@[2,-1]}"; }
 fi
 
 # direnv integration - cache to avoid subprocess on every shell start
