@@ -17,7 +17,6 @@ removed=0
 for f in "$cache_dir"/brew-shellenv.zsh \
     "$cache_dir"/fzf-init.zsh \
     "$cache_dir"/zoxide-init.zsh \
-    "$cache_dir"/oh-my-posh-init.zsh \
     "$cache_dir"/direnv-init.zsh; do
     if [[ -f "$f" ]]; then
         rm -f "$f"

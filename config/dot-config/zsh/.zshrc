@@ -56,7 +56,10 @@ autoload -U compinit
   else
     compinit -C -d "$dump"
   fi
-  [[ ! -f $dump.zwc || $dump -nt $dump.zwc ]] && zcompile "$dump" &!
+  # compile to a unique temp file and rename atomically: parallel shells (tmux) otherwise race on the .zwc
+  if [[ ! -f $dump.zwc || $dump -nt $dump.zwc ]]; then
+    { zcompile "$dump.$$.zwc" "$dump" 2>/dev/null && command mv -f "$dump.$$.zwc" "$dump.zwc" || command rm -f "$dump.$$.zwc"; } &!
+  fi
 }
 
 zinit cdreplay -q
@@ -154,29 +157,10 @@ fi
 # shellcheck disable=SC1090
 [ -f "$HOME/.localrc" ] && . "$HOME/.localrc"
 
-# prompt - cache oh-my-posh init to avoid subprocess on every shell start
+# prompt - not cached: init registers a per-shell session (POSH_SESSION_ID) holding the config;
+# a cached init shares one session across all shells and falls back to the default theme once it's cleaned up
 if [ "$TERM_PROGRAM" != "Apple_Terminal" ] && command -v oh-my-posh >/dev/null; then
-  _omp_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/oh-my-posh-init.zsh"
-  _omp_config="$XDG_CONFIG_HOME/oh-my-posh/mytheme.omp.yaml"
-  # Regenerate if: cache missing, config/binary newer than cache, or inner source file is gone/broken
-  _omp_needs_regen=0
-  if [[ ! -f "$_omp_cache" ]]; then
-    _omp_needs_regen=1
-  elif [[ "$_omp_config" -nt "$_omp_cache" || $(command -v oh-my-posh) -nt "$_omp_cache" ]]; then
-    _omp_needs_regen=1
-  else
-    # Verify the inner source file referenced by the cache actually exists
-    _omp_inner="${$(grep -o "source \$'[^']*'" "$_omp_cache")#source \$\'}"
-    _omp_inner="${_omp_inner%\'}"
-    [[ -z "$_omp_inner" || ! -f "$_omp_inner" ]] && _omp_needs_regen=1
-    unset _omp_inner
-  fi
-  if [[ $_omp_needs_regen -eq 1 ]]; then
-    mkdir -p "${_omp_cache:h}"
-    oh-my-posh init zsh --config "$_omp_config" >|"$_omp_cache"
-  fi
-  source "$_omp_cache"
-  unset _omp_cache _omp_config _omp_needs_regen
+  eval "$(oh-my-posh init zsh --config "$XDG_CONFIG_HOME/oh-my-posh/mytheme.omp.yaml")"
 fi
 
 # direnv integration - cache to avoid subprocess on every shell start
