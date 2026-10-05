@@ -92,7 +92,6 @@ apps/Brewfile.lock.json
 config/dot-config/zsh/.zsh_sessions
 
 # plugins
-shell/.config/zsh/.zsh_plugins.zsh
 config/dot-config/tmux/plugins
 
 

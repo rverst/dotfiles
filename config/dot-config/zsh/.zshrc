@@ -57,13 +57,20 @@ zinit light-mode for \
   atinit'bindkey "^[[A" history-substring-search-up; bindkey "^[[B" history-substring-search-down' \
   zsh-users/zsh-history-substring-search
 
-# load completions
+# load completions - full check (and dump rebuild) at most once a day
+fpath=(~/.docker/completions $fpath)
 autoload -U compinit
-if [[ -n ${ZDOTDIR}/.zcompdump(#qN.mh+24h) ]]; then
-  compinit
-else
-  compinit -C
-fi
+() {
+  setopt local_options extended_glob
+  local dump="$ZDOTDIR/.zcompdump"
+  if [[ ! -f $dump || -n $dump(#qN.mh+24) ]]; then
+    compinit -d "$dump"
+    touch "$dump"
+  else
+    compinit -C -d "$dump"
+  fi
+  [[ ! -f $dump.zwc || $dump -nt $dump.zwc ]] && zcompile "$dump" &!
+}
 
 zinit cdreplay -q
 
@@ -232,8 +239,3 @@ if (($+commands[rbenv])); then
 fi
 
 . "$HOME/.local/share/../bin/env"
-# The following lines have been added by Docker Desktop to enable Docker CLI completions.
-fpath=(/Users/robverst/.docker/completions $fpath)
-autoload -Uz compinit
-(( ${+_comps[docker]} )) || compinit
-# End of Docker CLI completions

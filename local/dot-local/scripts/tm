@@ -66,16 +66,17 @@ _tm_walk_git() {
   local root="$1"
   local -a excl=("${(@s: :)2}") queue=("$root")
   local current entry clean name skip ex
-  while (( ${#queue} > 0 )); do
-    current="${queue[1]}"
-    queue=("${queue[@]:1}")
+  local -i qi=1
+  while (( qi <= ${#queue} )); do
+    current="${queue[qi++]}"
     for entry in "$current"/*/(N/); do
       clean="${entry%/}"
       name="${clean:t}"
       skip=0
       for ex in "${excl[@]}"; do [[ "$name" == "$ex" ]] && skip=1 && break; done
       (( skip )) && continue
-      if [[ -d "${clean}/.git" ]]; then
+      # -e: worktrees have a .git file instead of a directory
+      if [[ -e "${clean}/.git" ]]; then
         print -r -- "$clean"
       else
         queue+=("$clean")
@@ -107,9 +108,9 @@ _tm_walk_depth() {
   # queue entries: "path\tdepth"
   local -a queue=("${root}	0")
   local item current depth entry clean name skip ex next_depth
-  while (( ${#queue} > 0 )); do
-    item="${queue[1]}"
-    queue=("${queue[@]:1}")
+  local -i qi=1
+  while (( qi <= ${#queue} )); do
+    item="${queue[qi++]}"
     current="${item%%	*}"
     depth="${item##*	}"
     (( depth >= max_depth )) && continue
@@ -225,7 +226,8 @@ _tm_load_config
 
 # Collect entries as tab-separated "name\tpath\tkind" triples.
 # kind: "running" for existing sessions, "new" for discovered dirs.
-entries=("no tmux		notmux")
+entries=()
+[[ -z "$TMUX" ]] && entries+=("no tmux		notmux")
 
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
@@ -247,16 +249,20 @@ for (( i=1; i<=${#entries}; i++ )); do
   ename="${entry%%	*}";  rest="${entry#*	}"
   epath="${rest%%	*}";   ekind="${rest##*	}"
   if [[ "$ekind" == "notmux" ]]; then
-    display_lines+=("$(printf '%d\t%-40s  \033[33m(no tmux)\033[0m\t%s' "$i" "$ename" "$epath")")
+    printf -v line '%d\t%-40s  \033[33m(no tmux)\033[0m\t%s' "$i" "$ename" "$epath"
   elif [[ "$ekind" == "running" ]]; then
-    display_lines+=("$(printf '%d\t%-40s  \033[32m(running)\033[0m\t%s' "$i" "$ename" "$epath")")
+    printf -v line '%d\t%-40s  \033[32m(running)\033[0m\t%s' "$i" "$ename" "$epath"
   else
-    display_lines+=("$(printf '%d\t%-40s\t%s' "$i" "$ename" "$epath")")
+    printf -v line '%d\t%-40s\t%s' "$i" "$ename" "$epath"
   fi
+  display_lines+=("$line")
 done
 
+fzf_popup_opts=()
+[[ -n "$TM_POPUP" ]] && fzf_popup_opts=(--no-tmux --height=100%)
+
 selection=$(printf '%s\n' "${display_lines[@]}" \
-  | fzf --ansi --no-sort \
+  | fzf --ansi --no-sort "${fzf_popup_opts[@]}" \
         --delimiter=$'\t' \
         --with-nth='2' \
         --nth='1' \
