@@ -231,7 +231,12 @@ flavour_add_file() {
 	# Adopt: drop the original so stow can relink from the flavour workspace.
 	# Only for files under HOME (a stowable target).
 	if [ "${under_home}" -eq 1 ]; then
-		flavour_remove_original "${abs}" "${src}"
+		if [ -n "${DOT_DEFER_REMOVE:-}" ]; then
+			# Directory add: removal happens once, after all files succeeded
+			_DOT_DEFERRED+=("${abs}|${src}")
+		else
+			flavour_remove_original "${abs}" "${src}"
+		fi
 	fi
 
 	return 0

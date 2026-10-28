@@ -85,3 +85,65 @@ teardown() { ts_teardown; }
 	[ ! -e "${DOTFILES_DIR}/local/dot-local/scripts/foo" ]
 	[ -f "${HOME}/.local/scripts/foo" ] # original untouched
 }
+
+@test "add_directory adds all files to a flavour and removes originals" {
+	mkdir -p "${HOME}/.config/tool/sub" "${HOME}/.config/tool/.git"
+	echo "a" >"${HOME}/.config/tool/a"
+	echo "b" >"${HOME}/.config/tool/sub/b"
+	echo "h" >"${HOME}/.config/tool/.hidden"
+	echo "g" >"${HOME}/.config/tool/.git/HEAD"
+	echo "x" >"${HOME}/.config/tool/.DS_Store"
+
+	add_directory "${HOME}/.config/tool/" "common"
+
+	local base="${DOTFILES_DIR}/flavours/common/dot-config/tool"
+	[ -f "${base}/a.age" ]
+	[ -f "${base}/sub/b.age" ]
+	[ -f "${base}/dot-hidden.age" ] || [ -f "${base}/.hidden.age" ]
+	[ ! -e "${base}/.git" ]
+	[ ! -e "${base}/dot-git" ]
+	[ ! -e "${HOME}/.config/tool/a" ]
+	[ ! -e "${HOME}/.config/tool/sub" ]
+	[ -f "${HOME}/.config/tool/.git/HEAD" ] # skipped files stay
+}
+
+@test "add_directory keeps all originals when a file fails" {
+	rm -f "${AGE_MASTER_PUB}" "${AGE_MASTER_KEY}"
+	age-keygen -o "${TEST_TMP}/foreign.txt" 2>/dev/null
+	age-keygen -y "${TEST_TMP}/foreign.txt" >"${AGE_RECIPIENTS_FILE}"
+
+	mkdir -p "${HOME}/.config/tool"
+	echo "a" >"${HOME}/.config/tool/a"
+	echo "b" >"${HOME}/.config/tool/b"
+
+	run add_directory "${HOME}/.config/tool" "common"
+	[ "$status" -ne 0 ]
+	[ -f "${HOME}/.config/tool/a" ]
+	[ -f "${HOME}/.config/tool/b" ]
+}
+
+@test "add_directory regular dry run writes nothing" {
+	export DOT_DRY=1
+	mkdir -p "${HOME}/.local/tool"
+	echo "a" >"${HOME}/.local/tool/a"
+
+	run add_directory "${HOME}/.local/tool" "regular"
+	[ "$status" -eq 0 ]
+	[ ! -e "${DOTFILES_DIR}/local/dot-local/tool/a" ]
+	[ -f "${HOME}/.local/tool/a" ]
+}
+
+@test "add_directory regular adds files and removes originals" {
+	mkdir -p "${HOME}/.local/tool"
+	echo "a" >"${HOME}/.local/tool/a"
+
+	add_directory "${HOME}/.local/tool" "regular"
+	[ -f "${DOTFILES_DIR}/local/dot-local/tool/a" ]
+	[ ! -e "${HOME}/.local/tool" ]
+}
+
+@test "add_directory fails on an empty directory" {
+	mkdir -p "${HOME}/.config/empty"
+	run add_directory "${HOME}/.config/empty" "common"
+	[ "$status" -ne 0 ]
+}

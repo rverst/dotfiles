@@ -35,8 +35,10 @@ usage() {
 	echo "  flavour [name]   show current flavour or switch to specified flavour"
 	echo "  reencrypt-all    re-encrypt all files with current recipients"
 	echo ""
-	echo "  add <file> [flavour|common|regular] [flavour-name|package]"
-	echo "                   add existing file to dotfiles"
+	echo "  add <file|dir> [flavour|common|regular] [flavour-name|package]"
+	echo "                   add existing file (or every file in a directory) to"
+	echo "                   dotfiles. For directories questions are asked once;"
+	echo "                   originals are only removed if all files were added"
 	echo "                   flavour: add to a flavour (default: current; encrypted"
 	echo "                            by default; optional flavour-name arg)"
 	echo "                   common:  add to the shared 'common' layer (encrypted)"
@@ -349,6 +351,24 @@ do_add() {
 		error "No file specified"
 		usage
 		exit 1
+	fi
+
+	if [ -d "${source_file}" ]; then
+		case "${add_type}" in
+		flavour | common | "")
+			check_dependencies
+			age_require_can_decrypt || exit 1
+			;;
+		esac
+		local rc=0
+		add_directory "${source_file}" "${add_type}" "${package_name}" || rc=$?
+		if [ "${rc}" -eq 0 ] && [ -n "${_DOT_ADD_LAYER:-}" ]; then
+			_add_restow_if_active "${_DOT_ADD_LAYER}"
+		fi
+		local dir_name
+		dir_name="$(basename "${source_file%/}")"
+		_maybe_commit_changes "Add ${dir_name}/ to ${add_type:-dotfiles}${package_name:+ ${package_name}}"
+		return "${rc}"
 	fi
 
 	case "${add_type}" in
