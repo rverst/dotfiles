@@ -22,8 +22,10 @@
 # sudo_command = "sudo"
 
 # Disable specific steps - same options as the command line flag
-disable = ["system", "microsoft_office", "emacs", "node", "pnpm", "containers", "jetbrains_aqua", "jetbrains_clion", "jetbrains_datagrip", "jetbrains_dataspell", "jetbrains_gateway", "jetbrains_goland", "jetbrains_idea", "jetbrains_mps", "jetbrains_phpstorm", "jetbrains_pycharm"]
-
+disable = ["containers", "git_repos", "gem", "ruby_gems", "helm", "microsoft_office", "system",
+"jetbrains_aqua", "jetbrains_clion", "jetbrains_datagrip", "jetbrains_dataspell", "jetbrains_gateway",
+"jetbrains_goland", "jetbrains_idea", "jetbrains_mps", "jetbrains_phpstorm", "jetbrains_pycharm", "jetbrains_rider",
+"jetbrains_rubymine", "jetbrains_rustrover", "jetbrains_toolbox", "jetbrains_webstorm"]
 
 # Ignore failures for these steps
 # ignore_failures = ["powershell"]
