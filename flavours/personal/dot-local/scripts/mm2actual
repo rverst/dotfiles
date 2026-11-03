@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# mm2actual – imports new MoneyMoney transactions into Actual (via actual-monmon)
+# and remembers the date of the last successful sync.
+#
+# Usage:  mm2actual [additional actual-monmon options, e.g. --account DE01...]
+#         mm2actual --reset   # clear sync state (next run: 1 month back)
+set -euo pipefail
+
+STATE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mm2actual"
+STATE="$STATE_DIR/last_sync"
+OVERLAP_DAYS="${MM2ACTUAL_OVERLAP_DAYS:-7}"   # buffer for late-posted transactions
+CONFIG="${MM2ACTUAL_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/actual-moneymoney/config.toml}"
+
+mkdir -p "$STATE_DIR"
+
+if [[ "${1:-}" == "--reset" ]]; then
+  rm -f "$STATE"
+  echo "Sync state reset."
+  exit 0
+fi
+
+command -v actual-monmon >/dev/null || { echo "actual-monmon not found (npm i -g actual-moneymoney)." >&2; exit 1; }
+[[ -f "$CONFIG" ]] || { echo "Config not found: $CONFIG" >&2; exit 1; }
+pgrep -xq MoneyMoney || { echo "MoneyMoney is not running – please start and unlock it." >&2; exit 1; }
+
+if [[ -f "$STATE" ]]; then
+  LAST=$(<"$STATE")
+  FROM=$(date -j -v-"${OVERLAP_DAYS}"d -f %Y-%m-%d "$LAST" +%Y-%m-%d)
+  echo "Last sync: $LAST → importing from $FROM"
+else
+  FROM=$(date -v-1m +%Y-%m-%d)
+  echo "No sync state found → importing from $FROM"
+fi
+
+TODAY=$(date +%Y-%m-%d)
+
+if actual-monmon import --config "$CONFIG" --from="$FROM" "$@"; then
+  # Only update state on a full import (not on partial imports via --account)
+  if [[ $# -eq 0 ]]; then
+    echo "$TODAY" > "$STATE"
+    echo "Sync successful, state: $TODAY"
+  else
+    echo "Partial import successful, sync state unchanged."
+  fi
+else
+  rc=$?
+  echo "Import failed (exit $rc), sync state unchanged." >&2
+  exit "$rc"
+fi
